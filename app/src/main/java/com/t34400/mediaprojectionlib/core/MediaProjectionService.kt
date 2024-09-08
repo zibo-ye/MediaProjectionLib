@@ -1,4 +1,4 @@
-package com.t34400.mediaprojectionlib
+package com.t34400.mediaprojectionlib.core
 
 import android.app.Activity.RESULT_OK
 import android.app.Notification

@@ -1,4 +1,4 @@
-package com.t34400.mediaprojectionlib
+package com.t34400.mediaprojectionlib.core
 
 import android.content.ComponentName
 import android.content.Context
@@ -67,7 +67,7 @@ class MediaProjectionRequestActivity : ComponentActivity() {
 
         @JvmStatic
         fun requestMediaProjection(context: Context, callback: (ImageReader) -> Unit) {
-            this.callback = callback
+            Companion.callback = callback
 
             imageReader?.let { imageReader ->
                 callback(imageReader)
