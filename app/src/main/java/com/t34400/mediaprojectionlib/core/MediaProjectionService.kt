@@ -86,11 +86,11 @@ class MediaProjectionService : Service() {
         projection.stop()
     }
 
-    override fun onBind(intent: Intent?): IBinder? {
+    override fun onBind(intent: Intent?): IBinder {
         return binder
     }
 
-    fun getImageReader(): ImageReader? {
+    fun getImageReader(): ImageReader {
         return imageReader
     }
 

@@ -4,7 +4,7 @@ import android.content.Context
 import android.media.ImageReader
 import android.util.Log
 
-public class MediaProjectionManager (
+class MediaProjectionManager (
     context: Context,
 ) {
     private var imageReader: ImageReader? = null
