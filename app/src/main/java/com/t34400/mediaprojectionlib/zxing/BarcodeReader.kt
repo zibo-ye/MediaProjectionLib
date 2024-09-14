@@ -16,6 +16,7 @@ import com.t34400.mediaprojectionlib.utils.ImageUtils
 import serializeResult
 import java.io.Closeable
 
+@Suppress("unused")
 class BarcodeReader (
     private val mediaProjectionManager: MediaProjectionManager,
     possibleFormatString: String,
@@ -30,7 +31,7 @@ class BarcodeReader (
     private val reader: MultiFormatReader
 
     private var isReading = false
-    private var result: Result? = null
+    private var latestResult: Result? = null
 
     init {
         mediaProjectionManager.imageAvailableEvent.addListener(this)
@@ -65,9 +66,11 @@ class BarcodeReader (
         }
 
         Thread {
-            readBarcode(source)?.let {
+            readBarcode(source).let { result ->
                 synchronized(this) {
-                    result = it
+                    result?.let {
+                        latestResult = it
+                    }
                     isReading = false
                 }
             }
@@ -78,9 +81,10 @@ class BarcodeReader (
         mediaProjectionManager.imageAvailableEvent.removeListener(this)
     }
 
+    @Suppress("unused")
     fun getLatestResult() : String {
         synchronized(this) {
-            return result?.let {
+            return latestResult?.let {
                 serializeResult(it)
             } ?: ""
         }

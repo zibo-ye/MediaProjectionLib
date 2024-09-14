@@ -51,6 +51,7 @@ class MediaProjectionManager (
     }
 
     // Called from Unity to get the latest image data
+    @Suppress("unused")
     fun getLatestImageIfAvailable() : ByteArray {
         return getLatestImage()?.let { image ->
             imageAvailableEvent.notifyListeners(image)
