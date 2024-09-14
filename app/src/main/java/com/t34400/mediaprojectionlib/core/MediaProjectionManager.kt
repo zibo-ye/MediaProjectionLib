@@ -57,7 +57,9 @@ class MediaProjectionManager (
 
     // Called from Unity to get the latest image data
     @Suppress("unused")
-    fun getLatestImageIfAvailable() : ByteArray {
+    fun getLatestImageIfAvailable(
+        textureRequired: Boolean
+    ) : ByteArray {
         return getLatestImage()?.let { image ->
             imageAvailableEvent.notifyListeners(image)
 
@@ -67,7 +69,7 @@ class MediaProjectionManager (
             bitmapAvailableEvent.notifyListeners(BitmapData(bitmap, timestamp))
 
             val stream = ByteArrayOutputStream()
-            return@let if (bitmap.compress(Bitmap.CompressFormat.JPEG, 100, stream)) {
+            return@let if (textureRequired && bitmap.compress(Bitmap.CompressFormat.JPEG, 100, stream)) {
                 stream.toByteArray()
             } else null
         } ?: ByteArray(0)
