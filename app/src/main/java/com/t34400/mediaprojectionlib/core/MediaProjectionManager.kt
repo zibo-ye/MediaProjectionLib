@@ -36,11 +36,16 @@ class EventManager<T> {
     }
 }
 
+data class BitmapData (
+    val bitmap: Bitmap,
+    val timestamp: Long
+)
+
 class MediaProjectionManager (
     context: Context,
 ) {
     val imageAvailableEvent = EventManager<Image>()
-    val bitmapAvailableEvent = EventManager<Bitmap>()
+    val bitmapAvailableEvent = EventManager<BitmapData>()
 
     private var imageReader: ImageReader? = null
 
@@ -57,8 +62,9 @@ class MediaProjectionManager (
             imageAvailableEvent.notifyListeners(image)
 
             val bitmap = ImageUtils.convertToBitmap(image)
+            val timestamp = image.timestamp
             image.close()
-            bitmapAvailableEvent.notifyListeners(bitmap)
+            bitmapAvailableEvent.notifyListeners(BitmapData(bitmap, timestamp))
 
             val stream = ByteArrayOutputStream()
             return@let if (bitmap.compress(Bitmap.CompressFormat.JPEG, 100, stream)) {
