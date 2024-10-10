@@ -44,5 +44,6 @@ dependencies {
     androidTestImplementation(libs.androidx.espresso.core)
 
     implementation(libs.serialization.json)
-    implementation(libs.zxing)
+    compileOnly(libs.zxing)
+    compileOnly(libs.mlkit)
 }
