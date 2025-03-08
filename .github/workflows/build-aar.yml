@@ -45,7 +45,7 @@ jobs:
         run: ./gradlew :app:assembleRelease
 
       - name: Upload AAR
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: aar-file
           path: app/build/outputs/aar/*.aar
