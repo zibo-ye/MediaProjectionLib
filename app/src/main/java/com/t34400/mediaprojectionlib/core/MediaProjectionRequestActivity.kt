@@ -78,5 +78,11 @@ class MediaProjectionRequestActivity : ComponentActivity() {
                 Intent(context, MediaProjectionRequestActivity::class.java)
             )
         }
+        @JvmStatic
+        fun stopMediaProjection(context: Context) {
+            val intent = Intent(context, MediaProjectionService::class.java)
+            context.stopService(intent)
+            imageReader = null
+        }
     }
 }
