@@ -91,4 +91,8 @@ class MediaProjectionManager (
         this.imageReader = imageReader
         Log.d("MediaProjectionManager", "setupImageReader")
     }
+
+    private fun stopMediaProjection(context: Context) {
+        MediaProjectionRequestActivity.stopMediaProjection(context)
+    }
 }
