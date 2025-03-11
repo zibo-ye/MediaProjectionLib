@@ -1,98 +1,91 @@
 package com.t34400.mediaprojectionlib.core
 
+import android.app.Activity.RESULT_OK
 import android.content.Context
-import android.graphics.Bitmap
-import android.media.Image
+import android.content.Intent
+import android.graphics.PixelFormat
+import android.hardware.display.DisplayManager
+import android.hardware.display.VirtualDisplay
 import android.media.ImageReader
+import android.media.projection.MediaProjection
+import android.media.projection.MediaProjectionManager
 import android.util.Log
-import com.t34400.mediaprojectionlib.utils.ImageUtils
-import java.io.ByteArrayOutputStream
-
-interface IEventListener<T> {
-    fun onEvent(data: T)
-}
-
-class EventManager<T> {
-    private val listeners = mutableListOf<IEventListener<T>>()
-
-    fun addListener(listener: IEventListener<T>) {
-        synchronized(this) {
-            listeners.add(listener)
-        }
-    }
-
-    fun removeListener(listener: IEventListener<T>) {
-        synchronized(this) {
-            listeners.remove(listener)
-        }
-    }
-
-    fun notifyListeners(data: T) {
-        synchronized(this) {
-            for (listener in listeners) {
-                listener.onEvent(data)
-            }
-        }
-    }
-}
-
-data class BitmapData (
-    val bitmap: Bitmap,
-    val timestamp: Long
-)
+import kotlin.math.roundToInt
 
 class MediaProjectionManager (
     context: Context,
 ) {
-    val imageAvailableEvent = EventManager<Image>()
-    val bitmapAvailableEvent = EventManager<BitmapData>()
+    private val width: Int
+    private val height: Int
+    private val densityDpi : Int
 
+    private var projection: MediaProjection? = null
+    private var virtualDisplay: VirtualDisplay? = null
     private var imageReader: ImageReader? = null
 
-    private var latestTimestamp: Long = 0L
-
     init {
-        MediaProjectionRequestActivity.requestMediaProjection(context, this::setupImageReader)
+        val metrics = context.resources.displayMetrics
+        val rawWidth = metrics.widthPixels
+        val rawHeight = metrics.heightPixels
+
+        val scale = if (maxOf(rawWidth, rawHeight) > 960) {
+            960f / maxOf(rawWidth, rawHeight)
+        } else 1f
+
+        width = (rawWidth * scale).roundToInt()
+        height = (rawHeight * scale).roundToInt()
+        densityDpi = metrics.densityDpi
+
+        MediaProjectionRequestActivity.requestMediaProjection(context, this::registerMediaProjection)
     }
 
-    // Called from Unity to get the latest image data
-    @Suppress("unused")
-    fun getLatestImageIfAvailable(
-        textureRequired: Boolean
-    ) : ByteArray {
-        return getLatestImage()?.let { image ->
-            imageAvailableEvent.notifyListeners(image)
+    fun getImageReader(): ImageReader? {
+        if (imageReader != null) {
+            return imageReader
+        }
 
-            val bitmap = ImageUtils.convertToBitmap(image)
-            val timestamp = image.timestamp
-            image.close()
-            bitmapAvailableEvent.notifyListeners(BitmapData(bitmap, timestamp))
+        return projection?.let { mediaProjection ->
+            imageReader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2)
 
-            val stream = ByteArrayOutputStream()
-            return@let if (textureRequired && bitmap.compress(Bitmap.CompressFormat.JPEG, 100, stream)) {
-                stream.toByteArray()
-            } else null
-        } ?: ByteArray(0)
-    }
+            imageReader?.let { imageReader ->
+                val imageSurface = imageReader.surface
 
-    private fun getLatestImage() : Image? {
-        return imageReader?.let { reader ->
-            val image = reader.acquireLatestImage() ?: return null
+                virtualDisplay = mediaProjection.createVirtualDisplay(
+                    "Projection",
+                    width,
+                    height,
+                    densityDpi,
+                    DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
+                    imageSurface,
+                    null,
+                    null
+                )
+            }
 
-            val timestamp = image.timestamp
-            return@let if (timestamp != latestTimestamp) {
-                latestTimestamp = timestamp
-                image
-            } else null
+            return this.imageReader
         }
     }
 
-    private fun setupImageReader(imageReader: ImageReader) {
-        this.imageReader = imageReader
-        Log.d("MediaProjectionManager", "setupImageReader")
-    }
-
+    @Suppress("unused")
     private fun stopMediaProjection(context: Context) {
         MediaProjectionRequestActivity.stopMediaProjection(context)
+
+        projection?.stop()
+        virtualDisplay?.release()
+        imageReader?.close()
+
+        projection = null
+        virtualDisplay = null
+        imageReader = null
+
+        Log.d("MediaProjectionManager", "stopMediaProjection")
+    }
+
+    private fun registerMediaProjection(context: Context, resultData: Intent) {
+        val projectionManager = context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+
+        projection = projectionManager.getMediaProjection(RESULT_OK, resultData)
+
+        Log.d("MediaProjectionManager", "registerMediaProjection")
     }
 }

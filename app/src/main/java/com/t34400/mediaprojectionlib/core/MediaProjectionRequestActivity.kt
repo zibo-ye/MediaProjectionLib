@@ -4,7 +4,6 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
-import android.media.ImageReader
 import android.media.projection.MediaProjectionManager
 import android.os.Bundle
 import android.os.IBinder
@@ -41,14 +40,14 @@ class MediaProjectionRequestActivity : ComponentActivity() {
             val binder = service as MediaProjectionService.LocalBinder
             val mediaProjectionService = binder.getService()
 
-            imageReader = mediaProjectionService.getImageReader()
-            imageReader?.let(callback)
+            mediaProjectionService.getResultData()?.let { resultData ->
+                resultDataCallback(this@MediaProjectionRequestActivity, resultData)
+            }
 
             finish()
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
-            imageReader = null
             isBound = false
         }
     }
@@ -62,17 +61,11 @@ class MediaProjectionRequestActivity : ComponentActivity() {
     }
 
     companion object {
-        private var callback: (ImageReader) -> Unit = {}
-        private var imageReader: ImageReader? = null
+        private var resultDataCallback: (Context, Intent) -> Unit = { _, _ -> }
 
         @JvmStatic
-        fun requestMediaProjection(context: Context, callback: (ImageReader) -> Unit) {
-            Companion.callback = callback
-
-            imageReader?.let { imageReader ->
-                callback(imageReader)
-                return
-            }
+        fun requestMediaProjection(context: Context, resultDataCallback: (Context, Intent) -> Unit) {
+            Companion.resultDataCallback = resultDataCallback
 
             context.startActivity(
                 Intent(context, MediaProjectionRequestActivity::class.java)
@@ -82,7 +75,6 @@ class MediaProjectionRequestActivity : ComponentActivity() {
         fun stopMediaProjection(context: Context) {
             val intent = Intent(context, MediaProjectionService::class.java)
             context.stopService(intent)
-            imageReader = null
         }
     }
 }

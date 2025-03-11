@@ -5,7 +5,7 @@ import android.graphics.Bitmap
 import android.util.Log
 import com.t34400.mediaprojectionlib.core.BitmapData
 import com.t34400.mediaprojectionlib.core.IEventListener
-import com.t34400.mediaprojectionlib.core.MediaProjectionManager
+import com.t34400.mediaprojectionlib.core.ScreenImageProcessManager
 import java.io.Closeable
 import java.io.File
 import java.io.FileOutputStream
@@ -14,14 +14,14 @@ import java.io.IOException
 @Suppress("unused")
 class BitmapSaver (
     context: Context,
-    private val mediaProjectionManager: MediaProjectionManager,
+    private val screenImageProcessManager: ScreenImageProcessManager,
     private val filenamePrefix: String,
 ) : IEventListener<BitmapData>, Closeable {
 
     private val directory: File?
 
     init {
-        mediaProjectionManager.bitmapAvailableEvent.addListener(this)
+        screenImageProcessManager.bitmapAvailableEvent.addListener(this)
         directory = context.getExternalFilesDir(null)
     }
 
@@ -38,13 +38,13 @@ class BitmapSaver (
                 outputStream.flush()
                 outputStream.close()
             } catch (e: IOException) {
-                Log.e(TAG, "Failed to save jpg file.", )
+                Log.e(TAG, "Failed to save jpg file.")
             }
         }.start()
     }
 
     override fun close() {
-        mediaProjectionManager.bitmapAvailableEvent.removeListener(this)
+        screenImageProcessManager.bitmapAvailableEvent.removeListener(this)
     }
 
     companion object {

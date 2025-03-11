@@ -7,18 +7,18 @@ import com.google.zxing.BinaryBitmap
 import com.google.zxing.DecodeHintType
 import com.google.zxing.MultiFormatReader
 import com.google.zxing.NotFoundException
-import com.google.zxing.Result
 import com.google.zxing.RGBLuminanceSource
+import com.google.zxing.Result
 import com.google.zxing.common.HybridBinarizer
 import com.t34400.mediaprojectionlib.core.IEventListener
-import com.t34400.mediaprojectionlib.core.MediaProjectionManager
+import com.t34400.mediaprojectionlib.core.ScreenImageProcessManager
 import com.t34400.mediaprojectionlib.utils.ImageUtils
 import serializeResult
 import java.io.Closeable
 
 @Suppress("unused")
 class BarcodeReader (
-    private val mediaProjectionManager: MediaProjectionManager,
+    private val screenImageProcessManager: ScreenImageProcessManager,
     possibleFormatString: String,
     private val cropRequired: Boolean,
     private val cropLeft: Int,
@@ -34,7 +34,7 @@ class BarcodeReader (
     private var latestResult: Result? = null
 
     init {
-        mediaProjectionManager.imageAvailableEvent.addListener(this)
+        screenImageProcessManager.imageAvailableEvent.addListener(this)
 
         val possibleFormats = possibleFormatString.split(" ")
             .map { BarcodeFormat.valueOf(it) }
@@ -78,7 +78,7 @@ class BarcodeReader (
     }
 
     override fun close() {
-        mediaProjectionManager.imageAvailableEvent.removeListener(this)
+        screenImageProcessManager.imageAvailableEvent.removeListener(this)
     }
 
     @Suppress("unused")
