@@ -1,20 +1,12 @@
 package com.t34400.mediaprojectionlib.core
 
 import android.graphics.Bitmap
-import android.media.Image
-import com.t34400.mediaprojectionlib.utils.ImageUtils
 import java.io.ByteArrayOutputStream
 
-data class BitmapData (
-    val bitmap: Bitmap,
-    val timestamp: Long
-)
-
 class ScreenImageProcessManager(
-    private val mediaProjectionManager: MediaProjectionManager
+    private val mediaProjectionManager: IMediaProjectionManager
 ) {
-    val imageAvailableEvent = EventManager<Image>()
-    val bitmapAvailableEvent = EventManager<BitmapData>()
+    val screenDataAvailableEvent = EventManager<ICapturedScreenData>()
 
     private var latestTimestamp: Long = 0L
 
@@ -24,12 +16,11 @@ class ScreenImageProcessManager(
         textureRequired: Boolean
     ) : ByteArray {
         return getLatestImage()?.let { image ->
-            imageAvailableEvent.notifyListeners(image)
+            screenDataAvailableEvent.notifyListeners(image)
 
-            val bitmap = ImageUtils.convertToBitmap(image)
-            val timestamp = image.timestamp
+            val bitmap = image.getBitmap()
+
             image.close()
-            bitmapAvailableEvent.notifyListeners(BitmapData(bitmap, timestamp))
 
             val stream = ByteArrayOutputStream()
             return@let if (textureRequired && bitmap.compress(Bitmap.CompressFormat.JPEG, 100, stream)) {
@@ -38,11 +29,10 @@ class ScreenImageProcessManager(
         } ?: ByteArray(0)
     }
 
-    private fun getLatestImage() : Image? {
-        return mediaProjectionManager.getImageReader()?.let { reader ->
-            val image = reader.acquireLatestImage() ?: return null
-
+    private fun getLatestImage() : ICapturedScreenData? {
+        return mediaProjectionManager.getCapturedScreenData()?.let { image ->
             val timestamp = image.timestamp
+
             return@let if (timestamp != latestTimestamp) {
                 latestTimestamp = timestamp
                 image

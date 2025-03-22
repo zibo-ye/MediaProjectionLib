@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import android.media.Image
 
+
 object ImageUtils {
     fun convertToBitmap(image: Image): Bitmap {
         val planes = image.planes
@@ -51,5 +52,13 @@ object ImageUtils {
             offset += rowPadding
         }
         return pixels
+    }
+
+    fun convertToByteArray(image: Image): ByteArray {
+        val planeBuffer = image.planes[0].buffer
+        val data = ByteArray(planeBuffer.remaining())
+        planeBuffer.get(data)
+
+        return data
     }
 }

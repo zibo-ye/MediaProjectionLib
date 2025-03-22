@@ -7,6 +7,12 @@ interface IEventListener<T> {
 class EventManager<T> {
     private val listeners = mutableListOf<IEventListener<T>>()
 
+    fun getCount(): Int {
+        synchronized(this) {
+            return listeners.count()
+        }
+    }
+
     fun addListener(listener: IEventListener<T>) {
         synchronized(this) {
             listeners.add(listener)

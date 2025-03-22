@@ -1,18 +1,19 @@
 package com.t34400.mediaprojectionlib.zxing
 
-import android.media.Image
 import android.util.Log
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.BinaryBitmap
 import com.google.zxing.DecodeHintType
+import com.google.zxing.LuminanceSource
 import com.google.zxing.MultiFormatReader
 import com.google.zxing.NotFoundException
+import com.google.zxing.PlanarYUVLuminanceSource
 import com.google.zxing.RGBLuminanceSource
 import com.google.zxing.Result
 import com.google.zxing.common.HybridBinarizer
+import com.t34400.mediaprojectionlib.core.ICapturedScreenData
 import com.t34400.mediaprojectionlib.core.IEventListener
 import com.t34400.mediaprojectionlib.core.ScreenImageProcessManager
-import com.t34400.mediaprojectionlib.utils.ImageUtils
 import serializeResult
 import java.io.Closeable
 
@@ -26,7 +27,7 @@ class BarcodeReader (
     private val cropWidth: Int,
     private val cropHeight: Int,
     private val tryHarder: Boolean
-) : IEventListener<Image>, Closeable {
+) : IEventListener<ICapturedScreenData>, Closeable {
 
     private val reader: MultiFormatReader
 
@@ -34,7 +35,7 @@ class BarcodeReader (
     private var latestResult: Result? = null
 
     init {
-        screenImageProcessManager.imageAvailableEvent.addListener(this)
+        screenImageProcessManager.screenDataAvailableEvent.addListener(this)
 
         val possibleFormats = possibleFormatString.split(" ")
             .map { BarcodeFormat.valueOf(it) }
@@ -50,9 +51,11 @@ class BarcodeReader (
         }
     }
 
-    override fun onEvent(data: Image) {
-        val pixels = ImageUtils.convertToPixels(data)
-        val source = RGBLuminanceSource(data.width, data.height, pixels).apply {
+    override fun onEvent(data: ICapturedScreenData) {
+        val source = when (data.type) {
+            ICapturedScreenData.Type.ARGB8888 -> RGBLuminanceSource(data.width, data.height, data.getPixels())
+            ICapturedScreenData.Type.YUV420 -> PlanarYUVLuminanceSource(data.getByteArray(), data.width, data.height, 0, 0, data.width, data.height, false)
+        }.apply {
             if (cropRequired) {
                 crop(cropLeft, cropTop, cropWidth, cropHeight)
             }
@@ -78,7 +81,7 @@ class BarcodeReader (
     }
 
     override fun close() {
-        screenImageProcessManager.imageAvailableEvent.removeListener(this)
+        screenImageProcessManager.screenDataAvailableEvent.removeListener(this)
     }
 
     @Suppress("unused")
@@ -90,7 +93,7 @@ class BarcodeReader (
         }
     }
 
-    private fun readBarcode(source: RGBLuminanceSource): Result? {
+    private fun readBarcode(source: LuminanceSource): Result? {
         val binaryBitmap = BinaryBitmap(HybridBinarizer(source))
         return try {
             reader.decodeWithState(binaryBitmap)

@@ -14,7 +14,8 @@ import kotlin.math.roundToInt
 
 class MediaProjectionManager (
     context: Context,
-) {
+    private val callback: MediaProjection.Callback? = null
+): IMediaProjectionManager {
     private val width: Int
     private val height: Int
     private val densityDpi : Int
@@ -39,12 +40,16 @@ class MediaProjectionManager (
         MediaProjectionRequestActivity.requestMediaProjection(context, this::registerMediaProjection)
     }
 
-    fun getImageReader(): ImageReader? {
-        if (imageReader != null) {
-            return imageReader
+    override fun getCapturedScreenData(): ICapturedScreenData? {
+        imageReader?.acquireLatestImage()?.let { image ->
+            return CapturedScreenDataARGB(image)
         }
 
         return projection?.let { mediaProjection ->
+            callback?.let {
+                mediaProjection.registerCallback(callback, null)
+            }
+
             imageReader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2)
 
             imageReader?.let { imageReader ->
@@ -62,7 +67,9 @@ class MediaProjectionManager (
                 )
             }
 
-            return this.imageReader
+            return this.imageReader?.acquireLatestImage()?.let { image ->
+                return CapturedScreenDataARGB(image)
+            }
         }
     }
 
@@ -78,7 +85,7 @@ class MediaProjectionManager (
         virtualDisplay = null
         imageReader = null
 
-        Log.d("MediaProjectionManager", "stopMediaProjection")
+        Log.d(TAG, "stopMediaProjection")
     }
 
     private fun registerMediaProjection(context: Context, resultData: Intent) {
@@ -86,6 +93,10 @@ class MediaProjectionManager (
 
         projection = projectionManager.getMediaProjection(RESULT_OK, resultData)
 
-        Log.d("MediaProjectionManager", "registerMediaProjection")
+        Log.d(TAG, "registerMediaProjection")
+    }
+
+    companion object {
+        private val TAG = MediaProjectionManager::class.java.simpleName
     }
 }
