@@ -1,16 +1,13 @@
 package com.t34400.mediaprojectionlib.mlkit
 
-import android.media.Image
 import android.util.Log
 import com.google.mlkit.vision.barcode.BarcodeScanner
 import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import com.google.mlkit.vision.barcode.BarcodeScanning
-import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
-import com.t34400.mediaprojectionlib.core.BitmapData
+import com.t34400.mediaprojectionlib.core.ICapturedScreenData
 import com.t34400.mediaprojectionlib.core.IEventListener
-import com.t34400.mediaprojectionlib.core.MediaProjectionManager
-import com.t34400.mediaprojectionlib.zxing.BarcodeReader
+import com.t34400.mediaprojectionlib.core.ScreenImageProcessManager
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.io.Closeable
@@ -19,9 +16,9 @@ import java.util.concurrent.Executors
 
 @Suppress("unused")
 class MlKitBarcodeReader (
-    private val mediaProjectionManager: MediaProjectionManager,
+    private val screenImageProcessManager: ScreenImageProcessManager,
     possibleFormatString: String,
-) : IEventListener<BitmapData>, Closeable {
+) : IEventListener<ICapturedScreenData>, Closeable {
 
     private val scanner: BarcodeScanner
     private val executor: Executor
@@ -30,7 +27,7 @@ class MlKitBarcodeReader (
     private var latestResults: MlKitResults? = null
 
     init {
-        mediaProjectionManager.bitmapAvailableEvent.addListener(this)
+        screenImageProcessManager.screenDataAvailableEvent.addListener(this)
 
         executor = Executors.newSingleThreadExecutor()
 
@@ -50,7 +47,7 @@ class MlKitBarcodeReader (
         scanner = BarcodeScanning.getClient(options)
     }
 
-    override fun onEvent(data: BitmapData) {
+    override fun onEvent(data: ICapturedScreenData) {
         synchronized(this) {
             if (isReading) {
                 return
@@ -59,7 +56,7 @@ class MlKitBarcodeReader (
             isReading = true
         }
 
-        val image = InputImage.fromBitmap(data.bitmap, 0)
+        val image = InputImage.fromBitmap(data.getBitmap(), 0)
         val timestamp = data.timestamp
 
         scanner.process(image)
@@ -83,7 +80,7 @@ class MlKitBarcodeReader (
     }
 
     override fun close() {
-        mediaProjectionManager.bitmapAvailableEvent.removeListener(this)
+        screenImageProcessManager.screenDataAvailableEvent.removeListener(this)
         scanner.close()
     }
 

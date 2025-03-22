@@ -46,4 +46,5 @@ dependencies {
     implementation(libs.serialization.json)
     compileOnly(libs.zxing)
     compileOnly(libs.mlkit)
+    compileOnly(libs.webrtc)
 }

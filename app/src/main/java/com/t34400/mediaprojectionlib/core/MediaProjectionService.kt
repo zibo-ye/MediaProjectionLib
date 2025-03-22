@@ -1,32 +1,21 @@
 package com.t34400.mediaprojectionlib.core
 
-import android.app.Activity.RESULT_OK
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
-import android.content.Context
 import android.content.Intent
-import android.graphics.PixelFormat
-import android.hardware.display.DisplayManager
-import android.hardware.display.VirtualDisplay
-import android.media.ImageReader
-import android.media.projection.MediaProjection
-import android.media.projection.MediaProjectionManager
 import android.os.Binder
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
-import kotlin.math.roundToInt
 
 
 class MediaProjectionService : Service() {
     private val binder = LocalBinder()
 
-    private var projection: MediaProjection? = null
-    private var virtualDisplay: VirtualDisplay? = null
-    private var imageReader: ImageReader? = null
+    private var resultData: Intent? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -63,54 +52,18 @@ class MediaProjectionService : Service() {
             }
         } ?: return START_NOT_STICKY
 
-        val data = if (Build.VERSION.SDK_INT >= 33) {
+        resultData = if (Build.VERSION.SDK_INT >= 33) {
             intent.getParcelableExtra(KEY_DATA, Intent::class.java)
         } else {
             @Suppress("DEPRECATION")
             intent.getParcelableExtra(KEY_DATA)
         } ?: return START_NOT_STICKY
-        val projectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-        projection = projectionManager.getMediaProjection(RESULT_OK, data)
-
-        val metrics = resources.displayMetrics
-        val rawWidth = metrics.widthPixels
-        val rawHeight = metrics.heightPixels
-
-        val scale = if (maxOf(rawWidth, rawHeight) > 960) {
-            960f / maxOf(rawWidth, rawHeight)
-        } else 1f
-
-        val width = (rawWidth * scale).roundToInt()
-        val height = (rawHeight * scale).roundToInt()
-
-        imageReader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2)
-
-        imageReader?.let { imageReader ->
-            projection?.let { projection ->
-                val imageSurface = imageReader.surface
-
-                virtualDisplay = projection.createVirtualDisplay(
-                    "Projection",
-                    width,
-                    height,
-                    metrics.densityDpi,
-                    DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
-                    imageSurface,
-                    null,
-                    null
-                )
-            }
-        }
 
         return START_STICKY
     }
 
     override fun onDestroy() {
         super.onDestroy()
-
-        virtualDisplay?.release()
-        imageReader?.close()
-        projection?.stop()
 
         val notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
         notificationManager.cancel(NOTIFICATION_ID)
@@ -120,8 +73,11 @@ class MediaProjectionService : Service() {
         return binder
     }
 
-    fun getImageReader(): ImageReader? {
-        return imageReader
+    fun getResultData() : Intent? {
+        val data = resultData
+        resultData = null
+
+        return data
     }
 
     private fun createNotificationChannel() {
