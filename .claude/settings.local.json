@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(.\\gradlew.bat:*)",
+      "Bash(gradlew.bat assembleRelease:*)",
+      "Bash(cmd:*)",
+      "Bash(copy:*)"
+    ],
+    "deny": []
+  }
+}
