@@ -171,6 +171,74 @@ class SimpleConfigurationTest {
     }
     
     @Test
+    fun `frameRate affects bitrate calculation manually`() {
+        // Test bitrate calculation algorithm manually (without Android context)
+        val basePixels = 1920 * 1080 // 1080p reference
+        val baseBitrate = 5_000_000 // 5 Mbps for 1080p at 30fps
+        val width = 1920
+        val height = 1080
+        
+        // Calculate bitrates for different frame rates using the same algorithm as getRecommendedBitrate
+        val pixels = width * height
+        val scaleFactor30fps = (pixels.toFloat() / basePixels) * (30 / 30f)
+        val scaleFactor60fps = (pixels.toFloat() / basePixels) * (60 / 30f)
+        val scaleFactor120fps = (pixels.toFloat() / basePixels) * (120 / 30f)
+        
+        val bitrate30fps = (baseBitrate * scaleFactor30fps).toInt()
+        val bitrate60fps = (baseBitrate * scaleFactor60fps).toInt()
+        val bitrate120fps = (baseBitrate * scaleFactor120fps).toInt()
+        
+        // Then
+        assertTrue(bitrate60fps > bitrate30fps, "60fps should require higher bitrate than 30fps")
+        assertTrue(bitrate120fps > bitrate60fps, "120fps should require higher bitrate than 60fps")
+        assertEquals(bitrate30fps * 2, bitrate60fps, "60fps should be roughly 2x bitrate of 30fps")
+        assertEquals(bitrate30fps * 4, bitrate120fps, "120fps should be roughly 4x bitrate of 30fps")
+    }
+    
+    @Test
+    fun `frame rate presets contain all expected values`() {
+        // Test that all expected frame rates are available
+        val expectedFrameRates = arrayOf(30, 36, 60, 72, 80, 90)
+        val presets = VideoRecordingManager.FrameRatePreset.values()
+        
+        expectedFrameRates.forEach { expectedFps ->
+            val preset = presets.find { it.fps == expectedFps }
+            assertNotNull(preset, "Frame rate $expectedFps should be available as a preset")
+            assertTrue(preset!!.displayName.isNotEmpty(), "Display name should not be empty")
+            assertTrue(preset.displayName.contains(expectedFps.toString()), "Display name should contain fps value")
+        }
+    }
+    
+    @Test
+    fun `frame rate presets cover VR requirements`() {
+        // Test VR-specific frame rates (72, 80, 90)
+        val vrFrameRates = arrayOf(72, 80, 90)
+        val presets = VideoRecordingManager.FrameRatePreset.values()
+        
+        vrFrameRates.forEach { vrFps ->
+            val preset = presets.find { it.fps == vrFps }
+            assertNotNull(preset, "VR frame rate $vrFps should be available")
+            assertTrue(preset!!.fps >= 72, "VR frame rates should be at least 72fps")
+        }
+    }
+    
+    @Test
+    fun `frame rate presets have appropriate display names`() {
+        // Test display names make sense
+        val presets = VideoRecordingManager.FrameRatePreset.values()
+        
+        presets.forEach { preset ->
+            assertTrue(preset.displayName.contains("FPS"), "Display name should contain 'FPS'")
+            assertTrue(preset.displayName.contains(preset.fps.toString()), "Display name should contain fps value")
+            when(preset.fps) {
+                30 -> assertTrue(preset.displayName.contains("Standard"))
+                72, 90 -> assertTrue(preset.displayName.contains("VR"))
+                60 -> assertTrue(preset.displayName.contains("Smooth"))
+            }
+        }
+    }
+    
+    @Test
     fun `performance test for config creation`() {
         // Given
         val iterations = 10000

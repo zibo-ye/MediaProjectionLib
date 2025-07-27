@@ -32,28 +32,65 @@ class VideoRecordingManager(
     private val context: Context,
     private val callback: MediaProjection.Callback? = null
 ) {
-    // Recording configuration
+    // Comprehensive recording configuration - all options exposed
     data class RecordingConfig(
-        val videoBitrate: Int = 5_000_000,      // 5 Mbps
-        val videoFrameRate: Int = 30,            // 30 fps
-        val videoFormat: String = MediaFormat.MIMETYPE_VIDEO_AVC, // H.264
-        val videoWidth: Int = 0,                 // 0 = use display width
-        val videoHeight: Int = 0,                // 0 = use display height
-        val audioEnabled: Boolean = false,       // Audio recording (future enhancement)
-        val outputDirectory: String = "",        // Output directory path
-        val maxRecordingDurationMs: Long = -1L,  // -1 for unlimited
-        val writeToFileWhileRecording: Boolean = true // Real-time file writing
+        // Video encoding settings
+        val videoBitrate: Int,                   // Bitrate in bits per second
+        val videoFrameRate: Int,                 // Frame rate in fps
+        val videoFormat: String,                 // MIME type (e.g., "video/avc", "video/hevc")
+        val videoWidth: Int,                     // Video width in pixels (0 = use display width)
+        val videoHeight: Int,                    // Video height in pixels (0 = use display height)
+        
+        // Advanced video settings
+        val iFrameInterval: Int = 2,             // I-frame interval in seconds
+        val bitrateMode: Int = MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_VBR, // Bitrate mode
+        val profile: Int = -1,                   // Codec profile (-1 = default)
+        val level: Int = -1,                     // Codec level (-1 = default)
+        val colorFormat: Int = MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface, // Color format
+        
+        // Audio settings
+        val audioEnabled: Boolean = false,       // Enable audio recording
+        val audioSampleRate: Int = 44100,        // Audio sample rate in Hz
+        val audioBitrate: Int = 128000,          // Audio bitrate in bits per second
+        val audioChannelCount: Int = 2,          // Number of audio channels
+        
+        // Output settings
+        val outputDirectory: String = "",        // Output directory path (empty = default)
+        val outputFormat: Int = MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4, // Container format
+        val maxRecordingDurationMs: Long = -1L,  // Max duration in milliseconds (-1 = unlimited)
+        val maxFileSize: Long = -1L,             // Max file size in bytes (-1 = unlimited)
+        
+        // Performance settings
+        val writeToFileWhileRecording: Boolean = true, // Real-time writing vs buffered
+        val priorityHint: Int = MediaCodec.CONFIGURE_FLAG_ENCODE, // Encoder priority hint
+        
+        // Display settings
+        val displayDensityDpi: Int = 0,          // Display density (0 = use system default)
+        val displayFlags: Int = 0                // VirtualDisplay flags
     )
 
-    // Available hardware codecs
-    enum class SupportedCodec(val mimeType: String, val displayName: String) {
-        H264(MediaFormat.MIMETYPE_VIDEO_AVC, "H.264/AVC"),
-        H265(MediaFormat.MIMETYPE_VIDEO_HEVC, "H.265/HEVC"),
-        VP8(MediaFormat.MIMETYPE_VIDEO_VP8, "VP8"),
-        VP9(MediaFormat.MIMETYPE_VIDEO_VP9, "VP9")
-        // Note: AV1 support requires API 29+, uncomment when targeting higher API
-        // AV1("video/av01", "AV1")
-    }
+    // Hardware codec information
+    data class CodecInfo(
+        val name: String,                        // Codec name (e.g., "OMX.qcom.video.encoder.avc")
+        val mimeType: String,                    // MIME type (e.g., "video/avc")
+        val displayName: String,                 // Human-readable name (e.g., "H.264/AVC")
+        val isHardwareAccelerated: Boolean,      // Hardware acceleration support
+        val supportedProfiles: List<Int>,        // Supported codec profiles
+        val supportedLevels: List<Int>,          // Supported codec levels
+        val supportedColorFormats: List<Int>,    // Supported color formats
+        val maxInstances: Int,                   // Max concurrent instances
+        val bitrateRange: Pair<Int, Int>?,       // Min/max bitrate range
+        val frameSizeRange: Pair<Pair<Int, Int>, Pair<Int, Int>>? // Min/max frame size ((minW,minH), (maxW,maxH))
+    )
+
+    // Display capability information
+    data class DisplayInfo(
+        val width: Int,                          // Display width in pixels
+        val height: Int,                         // Display height in pixels
+        val densityDpi: Int,                     // Display density
+        val refreshRate: Float,                  // Display refresh rate
+        val supportedFrameRates: List<Int>       // Supported frame rates for this display
+    )
 
     // Recording state
     enum class RecordingState {
@@ -303,6 +340,39 @@ class VideoRecordingManager(
         
         // Clamp to reasonable ranges
         return recommendedBitrate.coerceIn(1_000_000, 50_000_000) // 1-50 Mbps
+    }
+
+    /**
+     * Get available frame rate presets
+     */
+    fun getAvailableFrameRates(): List<FrameRatePreset> {
+        return FrameRatePreset.values().toList()
+    }
+
+    /**
+     * Create a recording configuration with a specific frame rate preset
+     */
+    fun createConfigWithFrameRate(
+        frameRatePreset: FrameRatePreset,
+        width: Int = 0,
+        height: Int = 0,
+        codec: SupportedCodec = SupportedCodec.H264
+    ): RecordingConfig {
+        val actualWidth = if (width > 0) width else displayWidth
+        val actualHeight = if (height > 0) height else displayHeight
+        val recommendedBitrate = getRecommendedBitrate(actualWidth, actualHeight, frameRatePreset.fps)
+        
+        return RecordingConfig(
+            videoBitrate = recommendedBitrate,
+            videoFrameRate = frameRatePreset.fps,
+            videoFormat = codec.mimeType,
+            videoWidth = actualWidth,
+            videoHeight = actualHeight,
+            audioEnabled = false,
+            outputDirectory = "",
+            maxRecordingDurationMs = -1L,
+            writeToFileWhileRecording = true
+        )
     }
 
     /**
