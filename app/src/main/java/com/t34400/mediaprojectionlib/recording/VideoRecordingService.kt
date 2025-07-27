@@ -1,5 +1,6 @@
 package com.t34400.mediaprojectionlib.recording
 
+import android.app.Activity
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -7,12 +8,14 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.media.MediaFormat
 import android.os.Binder
 import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
+import androidx.localbroadcastmanager.content.LocalBroadcastManager
 
 /**
  * VideoRecordingService provides a foreground service for video recording operations.
@@ -39,6 +42,15 @@ class VideoRecordingService : Service() {
         const val EXTRA_VIDEO_FRAMERATE = "extra_video_framerate"
         const val EXTRA_OUTPUT_DIRECTORY = "extra_output_directory"
         const val EXTRA_MAX_DURATION_MS = "extra_max_duration_ms"
+        
+        // Broadcasting actions for external apps
+        const val ACTION_RECORDING_STATE_CHANGED = "com.test.mediaprojectionapp.RECORDING_STATE_CHANGED"
+        const val ACTION_RECORDING_COMPLETE = "com.test.mediaprojectionapp.RECORDING_COMPLETE"
+        const val ACTION_RECORDING_ERROR = "com.test.mediaprojectionapp.RECORDING_ERROR"
+        
+        const val EXTRA_RECORDING_STATE = "extra_recording_state"
+        const val EXTRA_OUTPUT_PATH = "extra_output_path"
+        const val EXTRA_ERROR_MESSAGE = "extra_error_message"
         
         /**
          * Start the video recording service
@@ -191,13 +203,29 @@ class VideoRecordingService : Service() {
         val config = VideoRecordingManager.RecordingConfig(
             videoBitrate = intent.getIntExtra(EXTRA_VIDEO_BITRATE, 5_000_000),
             videoFrameRate = intent.getIntExtra(EXTRA_VIDEO_FRAMERATE, 30),
+            videoFormat = intent.getStringExtra("videoCodec") ?: MediaFormat.MIMETYPE_VIDEO_AVC,
+            videoWidth = intent.getIntExtra("videoWidth", 0), // 0 = use display width
+            videoHeight = intent.getIntExtra("videoHeight", 0), // 0 = use display height
             outputDirectory = intent.getStringExtra(EXTRA_OUTPUT_DIRECTORY) ?: "",
             maxRecordingDurationMs = intent.getLongExtra(EXTRA_MAX_DURATION_MS, -1L)
         )
         
         Log.i(TAG, "Starting recording with config: $config")
         
-        val success = videoRecordingManager?.startRecording(config) ?: false
+        // Check if MediaProjection permission data is provided
+        val resultCode = intent.getIntExtra("resultCode", -1)
+        val resultData = intent.getParcelableExtra<Intent>("data")
+        
+        Log.d(TAG, "Received permission data: resultCode=$resultCode, data=$resultData")
+        
+        val success = if (resultCode == Activity.RESULT_OK && resultData != null) {
+            Log.d(TAG, "Using provided MediaProjection permission data")
+            videoRecordingManager?.startRecordingWithPermission(config, resultCode, resultData) ?: false
+        } else {
+            Log.d(TAG, "No permission data provided, using standard flow")
+            videoRecordingManager?.startRecording(config) ?: false
+        }
+        
         if (success) {
             recordingStartTime = System.currentTimeMillis()
             updateNotification(createRecordingNotification("Preparing to record..."))
@@ -246,6 +274,9 @@ class VideoRecordingService : Service() {
     private fun handleRecordingStateChanged(state: VideoRecordingManager.RecordingState) {
         Log.d(TAG, "Recording state changed: $state")
         
+        // Broadcast state change to external apps
+        broadcastStateChange(state.name)
+        
         when (state) {
             VideoRecordingManager.RecordingState.PREPARING -> {
                 updateNotification(createRecordingNotification("Preparing to record..."))
@@ -287,6 +318,9 @@ class VideoRecordingService : Service() {
         val duration = System.currentTimeMillis() - recordingStartTime
         val durationText = formatDuration(duration)
         
+        // Broadcast completion to external apps
+        broadcastRecordingComplete(outputPath)
+        
         updateNotification(createCompletedNotification(outputPath, durationText))
         
         // Auto-stop service after recording completion (optional)
@@ -301,6 +335,10 @@ class VideoRecordingService : Service() {
         Log.e(TAG, "Recording error: $errorMessage")
         
         isRecording = false
+        
+        // Broadcast error to external apps
+        broadcastRecordingError(errorMessage)
+        
         updateNotification(createErrorNotification(errorMessage))
     }
     
@@ -469,4 +507,49 @@ class VideoRecordingService : Service() {
      * Get current output file path
      */
     fun getCurrentOutputFile(): String? = currentOutputFile
+    
+    /**
+     * Broadcast recording state change to external apps
+     */
+    private fun broadcastStateChange(state: String) {
+        try {
+            val intent = Intent(ACTION_RECORDING_STATE_CHANGED).apply {
+                putExtra(EXTRA_RECORDING_STATE, state)
+            }
+            LocalBroadcastManager.getInstance(this).sendBroadcast(intent)
+            Log.d(TAG, "Broadcasted state change: $state")
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to broadcast state change", e)
+        }
+    }
+    
+    /**
+     * Broadcast recording completion to external apps
+     */
+    private fun broadcastRecordingComplete(outputPath: String) {
+        try {
+            val intent = Intent(ACTION_RECORDING_COMPLETE).apply {
+                putExtra(EXTRA_OUTPUT_PATH, outputPath)
+            }
+            LocalBroadcastManager.getInstance(this).sendBroadcast(intent)
+            Log.d(TAG, "Broadcasted recording completion: $outputPath")
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to broadcast recording completion", e)
+        }
+    }
+    
+    /**
+     * Broadcast recording error to external apps
+     */
+    private fun broadcastRecordingError(errorMessage: String) {
+        try {
+            val intent = Intent(ACTION_RECORDING_ERROR).apply {
+                putExtra(EXTRA_ERROR_MESSAGE, errorMessage)
+            }
+            LocalBroadcastManager.getInstance(this).sendBroadcast(intent)
+            Log.d(TAG, "Broadcasted recording error: $errorMessage")
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to broadcast recording error", e)
+        }
+    }
 }

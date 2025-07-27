@@ -7,6 +7,7 @@ import android.hardware.display.DisplayManager
 import android.hardware.display.VirtualDisplay
 import android.media.MediaCodec
 import android.media.MediaCodecInfo
+import android.media.MediaCodecList
 import android.media.MediaFormat
 import android.media.MediaMuxer
 import android.media.projection.MediaProjection
@@ -36,10 +37,23 @@ class VideoRecordingManager(
         val videoBitrate: Int = 5_000_000,      // 5 Mbps
         val videoFrameRate: Int = 30,            // 30 fps
         val videoFormat: String = MediaFormat.MIMETYPE_VIDEO_AVC, // H.264
+        val videoWidth: Int = 0,                 // 0 = use display width
+        val videoHeight: Int = 0,                // 0 = use display height
         val audioEnabled: Boolean = false,       // Audio recording (future enhancement)
         val outputDirectory: String = "",        // Output directory path
-        val maxRecordingDurationMs: Long = -1L   // -1 for unlimited
+        val maxRecordingDurationMs: Long = -1L,  // -1 for unlimited
+        val writeToFileWhileRecording: Boolean = true // Real-time file writing
     )
+
+    // Available hardware codecs
+    enum class SupportedCodec(val mimeType: String, val displayName: String) {
+        H264(MediaFormat.MIMETYPE_VIDEO_AVC, "H.264/AVC"),
+        H265(MediaFormat.MIMETYPE_VIDEO_HEVC, "H.265/HEVC"),
+        VP8(MediaFormat.MIMETYPE_VIDEO_VP8, "VP8"),
+        VP9(MediaFormat.MIMETYPE_VIDEO_VP9, "VP9")
+        // Note: AV1 support requires API 29+, uncomment when targeting higher API
+        // AV1("video/av01", "AV1")
+    }
 
     // Recording state
     enum class RecordingState {
@@ -71,6 +85,7 @@ class VideoRecordingManager(
     private var recordingConfig: RecordingConfig? = null
     private var outputFile: File? = null
     private var recordingStartTime: Long = 0L
+    private var isIntentionallyStopping = false
     
     // Callbacks for Unity integration
     var onRecordingStateChanged: ((RecordingState) -> Unit)? = null
@@ -78,12 +93,12 @@ class VideoRecordingManager(
     var onRecordingError: ((String) -> Unit)? = null
 
     init {
-        // Initialize display metrics
+        // Initialize display metrics as defaults
         val metrics = context.resources.displayMetrics
         val rawWidth = metrics.widthPixels
         val rawHeight = metrics.heightPixels
         
-        // Scale down if resolution is too high for performance
+        // Scale down if resolution is too high for performance (default fallback)
         val scale = if (maxOf(rawWidth, rawHeight) > 1920) {
             1920f / maxOf(rawWidth, rawHeight)
         } else 1f
@@ -92,7 +107,7 @@ class VideoRecordingManager(
         displayHeight = (rawHeight * scale).roundToInt()
         displayDensityDpi = metrics.densityDpi
         
-        Log.d(TAG, "Initialized VideoRecordingManager: ${displayWidth}x${displayHeight}@${displayDensityDpi}dpi")
+        Log.d(TAG, "Initialized VideoRecordingManager: ${displayWidth}x${displayHeight}@${displayDensityDpi}dpi (defaults)")
     }
 
     /**
@@ -128,6 +143,37 @@ class VideoRecordingManager(
     }
 
     /**
+     * Start video recording with MediaProjection permission data already obtained
+     */
+    fun startRecordingWithPermission(config: RecordingConfig, resultCode: Int, resultData: Intent): Boolean {
+        if (currentState != RecordingState.IDLE) {
+            Log.w(TAG, "Cannot start recording: current state is $currentState")
+            if (currentState == RecordingState.ERROR) {
+                Log.d(TAG, "Resetting from ERROR state")
+                changeState(RecordingState.IDLE)
+            } else {
+                return false
+            }
+        }
+        
+        recordingConfig = config
+        changeState(RecordingState.PREPARING)
+        
+        try {
+            // Register MediaProjection with provided permission data
+            registerMediaProjection(context, resultData)
+            
+            // Setup the complete recording pipeline
+            return setupRecordingPipeline()
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to start recording with permission", e)
+            handleError("Failed to start recording: ${e.message}")
+            return false
+        }
+    }
+
+    /**
      * Stop video recording and finalize the output file
      */
     fun stopRecording(): Boolean {
@@ -137,12 +183,20 @@ class VideoRecordingManager(
         }
         
         changeState(RecordingState.STOPPING)
+        isIntentionallyStopping = true
         
         try {
-            // Stop the encoder gracefully
-            videoEncoder?.signalEndOfInputStream()
+            // Stop the encoder gracefully by signaling end of stream to the input surface
+            encoderInputSurface?.let { surface ->
+                // For surface input, we need to signal end of stream differently
+                // The proper way is to stop the VirtualDisplay first, which will cause
+                // the encoder to receive end of stream when no more frames are available
+                Log.d(TAG, "Stopping VirtualDisplay to signal end of stream")
+                virtualDisplay?.release()
+                virtualDisplay = null
+            }
             
-            // This will be handled in the encoder callback
+            // This will be handled in the encoder thread
             return true
             
         } catch (e: Exception) {
@@ -158,9 +212,98 @@ class VideoRecordingManager(
     fun getRecordingState(): RecordingState = currentState
     
     /**
+     * Get current recording status as string (for Unity JNI bridge)
+     */
+    fun getRecordingStateString(): String = currentState.name
+    
+    /**
      * Get output file path (null if recording not started or completed)
      */
     fun getOutputFilePath(): String? = outputFile?.absolutePath
+
+    /**
+     * Get available hardware-accelerated video codecs on this device
+     */
+    fun getAvailableCodecs(): List<SupportedCodec> {
+        val availableCodecs = mutableListOf<SupportedCodec>()
+        
+        for (codec in SupportedCodec.values()) {
+            try {
+                // Try to create an encoder for this codec to test availability
+                val testFormat = MediaFormat.createVideoFormat(codec.mimeType, 1920, 1080).apply {
+                    setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
+                    setInteger(MediaFormat.KEY_BIT_RATE, 5_000_000)
+                    setInteger(MediaFormat.KEY_FRAME_RATE, 30)
+                    setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 2)
+                }
+                
+                val encoder = MediaCodec.createEncoderByType(codec.mimeType)
+                encoder.release() // Clean up immediately
+                
+                availableCodecs.add(codec)
+                Log.d(TAG, "Found available codec: ${codec.displayName}")
+                
+            } catch (e: Exception) {
+                Log.d(TAG, "Codec ${codec.displayName} not available: ${e.message}")
+            }
+        }
+        
+        // Ensure H.264 is always included as fallback (most widely supported)
+        if (availableCodecs.isEmpty()) {
+            availableCodecs.add(SupportedCodec.H264)
+            Log.w(TAG, "No codecs detected, adding H.264 as fallback")
+        }
+        
+        Log.i(TAG, "Available codecs: ${availableCodecs.map { it.displayName }}")
+        return availableCodecs
+    }
+
+    /**
+     * Get optimal recording resolution for current display and VR requirements
+     */
+    fun getOptimalResolutions(): List<Pair<Int, Int>> {
+        val resolutions = mutableListOf<Pair<Int, Int>>()
+        
+        // VR-optimized resolutions for high-quality recording
+        // These are designed for VR content capture and streaming
+        val vrResolutions = listOf(
+            Pair(3840, 2160), // 4K UHD - Premium VR quality
+            Pair(2560, 1440), // QHD - High VR quality
+            Pair(1920, 1080), // FHD - Standard VR quality
+            Pair(1280, 720),  // HD - Performance VR mode
+            Pair(1024, 512),  // Ultra-wide VR (2:1 aspect ratio)
+            Pair(2048, 1024), // High-res ultra-wide VR
+        )
+        
+        // Always include VR resolutions regardless of display size
+        // VR recording often needs higher resolution than the display
+        resolutions.addAll(vrResolutions)
+        
+        // Add current display resolution as fallback if not already included
+        val displayRes = Pair(displayWidth, displayHeight)
+        if (!resolutions.contains(displayRes)) {
+            resolutions.add(displayRes)
+        }
+        
+        Log.d(TAG, "Optimal resolutions for VR recording: $resolutions")
+        return resolutions
+    }
+
+    /**
+     * Get recommended bitrates for different resolutions
+     */
+    fun getRecommendedBitrate(width: Int, height: Int, frameRate: Int = 30): Int {
+        val pixels = width * height
+        val basePixels = 1920 * 1080 // 1080p reference
+        val baseBitrate = 5_000_000 // 5 Mbps for 1080p
+        
+        // Scale bitrate based on resolution and frame rate
+        val scaleFactor = (pixels.toFloat() / basePixels) * (frameRate / 30f)
+        val recommendedBitrate = (baseBitrate * scaleFactor).toInt()
+        
+        // Clamp to reasonable ranges
+        return recommendedBitrate.coerceIn(1_000_000, 50_000_000) // 1-50 Mbps
+    }
 
     /**
      * Setup the complete zero-copy recording pipeline
@@ -187,6 +330,9 @@ class VideoRecordingManager(
             // Step 6: Begin recording
             recordingStartTime = System.currentTimeMillis()
             changeState(RecordingState.RECORDING)
+            
+            // Give MediaProjection a moment to stabilize before declaring success
+            Log.d(TAG, "MediaProjection pipeline established, waiting for stabilization...")
             
             Log.i(TAG, "Recording pipeline setup complete: ${outputFile?.absolutePath}")
             return true
@@ -233,16 +379,31 @@ class VideoRecordingManager(
      * Setup MediaCodec hardware encoder with optimal settings
      */
     private fun setupVideoEncoder(config: RecordingConfig) {
-        // Create video format for H.264 encoding
-        val videoFormat = MediaFormat.createVideoFormat(config.videoFormat, displayWidth, displayHeight).apply {
+        // Determine actual recording resolution
+        val actualWidth = if (config.videoWidth > 0) config.videoWidth else displayWidth
+        val actualHeight = if (config.videoHeight > 0) config.videoHeight else displayHeight
+        
+        // Create video format with configurable codec and resolution
+        val videoFormat = MediaFormat.createVideoFormat(config.videoFormat, actualWidth, actualHeight).apply {
             setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
             setInteger(MediaFormat.KEY_BIT_RATE, config.videoBitrate)
             setInteger(MediaFormat.KEY_FRAME_RATE, config.videoFrameRate)
             setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 2) // I-frame every 2 seconds
             
-            // Enable hardware acceleration
-            setInteger(MediaFormat.KEY_PROFILE, MediaCodecInfo.CodecProfileLevel.AVCProfileBaseline)
-            setInteger(MediaFormat.KEY_LEVEL, MediaCodecInfo.CodecProfileLevel.AVCLevel31)
+            // Configure codec-specific settings
+            when (config.videoFormat) {
+                MediaFormat.MIMETYPE_VIDEO_AVC -> {
+                    // H.264 settings
+                    setInteger(MediaFormat.KEY_PROFILE, MediaCodecInfo.CodecProfileLevel.AVCProfileBaseline)
+                    setInteger(MediaFormat.KEY_LEVEL, MediaCodecInfo.CodecProfileLevel.AVCLevel31)
+                }
+                MediaFormat.MIMETYPE_VIDEO_HEVC -> {
+                    // H.265 settings
+                    setInteger(MediaFormat.KEY_PROFILE, MediaCodecInfo.CodecProfileLevel.HEVCProfileMain)
+                    setInteger(MediaFormat.KEY_LEVEL, MediaCodecInfo.CodecProfileLevel.HEVCMainTierLevel31)
+                }
+                // VP8, VP9, AV1 use default settings
+            }
         }
         
         // Create encoder
@@ -252,7 +413,7 @@ class VideoRecordingManager(
         // Get the input surface for zero-copy pipeline
         encoderInputSurface = videoEncoder!!.createInputSurface()
         
-        Log.d(TAG, "Video encoder configured: ${displayWidth}x${displayHeight}, ${config.videoBitrate} bps, ${config.videoFrameRate} fps")
+        Log.d(TAG, "Video encoder configured: ${actualWidth}x${actualHeight}, ${config.videoBitrate} bps, ${config.videoFrameRate} fps, codec: ${config.videoFormat}")
     }
 
     /**
@@ -261,11 +422,16 @@ class VideoRecordingManager(
     private fun setupVirtualDisplay() {
         val projection = mediaProjection ?: throw IllegalStateException("MediaProjection not available")
         val surface = encoderInputSurface ?: throw IllegalStateException("Encoder input surface not available")
+        val config = recordingConfig ?: throw IllegalStateException("Recording config not available")
+        
+        // Use configurable resolution for VirtualDisplay
+        val actualWidth = if (config.videoWidth > 0) config.videoWidth else displayWidth
+        val actualHeight = if (config.videoHeight > 0) config.videoHeight else displayHeight
         
         virtualDisplay = projection.createVirtualDisplay(
             "VideoRecording",
-            displayWidth,
-            displayHeight,
+            actualWidth,
+            actualHeight,
             displayDensityDpi,
             DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
             surface, // Direct connection to MediaCodec input surface
@@ -305,7 +471,8 @@ class VideoRecordingManager(
         val bufferInfo = MediaCodec.BufferInfo()
         
         while (currentState == RecordingState.RECORDING || currentState == RecordingState.STOPPING) {
-            val outputBufferIndex = encoder.dequeueOutputBuffer(bufferInfo, 10_000) // 10ms timeout
+            try {
+                val outputBufferIndex = encoder.dequeueOutputBuffer(bufferInfo, 10_000) // 10ms timeout
             
             when {
                 outputBufferIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
@@ -358,6 +525,14 @@ class VideoRecordingManager(
                     }
                 }
             }
+            } catch (e: IllegalStateException) {
+                // Handle case where encoder is stopped while dequeuing
+                Log.w(TAG, "Encoder dequeue interrupted, likely due to cleanup: ${e.message}")
+                break
+            } catch (e: Exception) {
+                Log.e(TAG, "Error processing encoded frames", e)
+                break
+            }
         }
         
         // Finalize recording
@@ -399,7 +574,28 @@ class VideoRecordingManager(
         val projectionManager = context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
         mediaProjection = projectionManager.getMediaProjection(RESULT_OK, resultData)
         
-        callback?.let { mediaProjection?.registerCallback(it, null) }
+        // Register a callback to handle MediaProjection lifecycle
+        val projectionCallback = callback ?: object : MediaProjection.Callback() {
+            override fun onStop() {
+                Log.d(TAG, "MediaProjection stopped")
+                // Only treat as error if we're actively recording AND not intentionally stopping
+                if ((currentState == RecordingState.RECORDING || currentState == RecordingState.PREPARING) && !isIntentionallyStopping) {
+                    Log.w(TAG, "MediaProjection stopped unexpectedly during recording")
+                    // Try to finalize the recording gracefully instead of error
+                    if (currentState == RecordingState.RECORDING) {
+                        isIntentionallyStopping = true
+                        stopRecording()
+                    } else {
+                        handleError("MediaProjection stopped during setup")
+                    }
+                } else {
+                    Log.d(TAG, "MediaProjection stopped normally (intentional: $isIntentionallyStopping)")
+                    // Reset the flag
+                    isIntentionallyStopping = false
+                }
+            }
+        }
+        mediaProjection?.registerCallback(projectionCallback, null)
         
         Log.d(TAG, "MediaProjection registered")
     }
@@ -430,11 +626,23 @@ class VideoRecordingManager(
      */
     private fun cleanupResources() {
         try {
-            // Stop VirtualDisplay
+            // Stop VirtualDisplay first to stop new frames
             virtualDisplay?.release()
             virtualDisplay = null
             
-            // Stop and release MediaCodec
+            // Stop encoding thread BEFORE stopping encoder
+            encoderThread?.let { thread ->
+                thread.quitSafely()
+                try {
+                    thread.join(2000) // Wait up to 2 seconds
+                } catch (e: InterruptedException) {
+                    Log.w(TAG, "Interrupted while waiting for encoder thread to finish")
+                }
+            }
+            encoderThread = null
+            encoderHandler = null
+            
+            // Now stop and release MediaCodec
             videoEncoder?.let { encoder ->
                 try {
                     encoder.stop()
@@ -459,21 +667,21 @@ class VideoRecordingManager(
             }
             mediaMuxer = null
             
-            // Stop encoding thread
-            encoderThread?.let { thread ->
-                thread.quitSafely()
+            // Stop and release MediaProjection
+            mediaProjection?.let { projection ->
                 try {
-                    thread.join(2000) // Wait up to 2 seconds
-                } catch (e: InterruptedException) {
-                    Log.w(TAG, "Interrupted while waiting for encoder thread to finish")
+                    projection.stop()
+                    Log.d(TAG, "MediaProjection stopped and released")
+                } catch (e: Exception) {
+                    Log.w(TAG, "Error stopping MediaProjection", e)
                 }
             }
-            encoderThread = null
-            encoderHandler = null
+            mediaProjection = null
             
             // Reset state
             videoTrackIndex = -1
             muxerStarted = false
+            isIntentionallyStopping = false
             
             Log.d(TAG, "Resources cleaned up")
             
@@ -492,9 +700,8 @@ class VideoRecordingManager(
         
         cleanupResources()
         
-        // Stop MediaProjection
-        mediaProjection?.stop()
-        mediaProjection = null
+        // MediaProjection is already stopped in cleanupResources()
+        // No need to stop it again here
         
         Log.d(TAG, "VideoRecordingManager released")
     }

@@ -39,6 +39,7 @@ dependencies {
     // implementation(libs.androidx.appcompat)
     implementation(libs.material)
     implementation(libs.androidx.activity)
+    implementation("androidx.localbroadcastmanager:localbroadcastmanager:1.1.0")
     // Unit testing dependencies
     testImplementation(libs.junit)
     testImplementation("org.jetbrains.kotlin:kotlin-test:1.9.22")
