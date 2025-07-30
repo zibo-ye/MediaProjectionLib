@@ -32,7 +32,7 @@ class VideoRecordingManager(
     private val context: Context,
     private val callback: MediaProjection.Callback? = null
 ) {
-    // Comprehensive recording configuration - all options exposed
+    // Comprehensive recording configuration - all MediaCodec options exposed
     data class RecordingConfig(
         // Video encoding settings
         val videoBitrate: Int,                   // Bitrate in bits per second
@@ -48,7 +48,7 @@ class VideoRecordingManager(
         val level: Int = -1,                     // Codec level (-1 = default)
         val colorFormat: Int = MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface, // Color format
         
-        // Audio settings
+        // Audio settings (future enhancement)
         val audioEnabled: Boolean = false,       // Enable audio recording
         val audioSampleRate: Int = 44100,        // Audio sample rate in Hz
         val audioBitrate: Int = 128000,          // Audio bitrate in bits per second
@@ -67,9 +67,35 @@ class VideoRecordingManager(
         // Display settings
         val displayDensityDpi: Int = 0,          // Display density (0 = use system default)
         val displayFlags: Int = 0                // VirtualDisplay flags
-    )
+    ) {
+        companion object {
+            // Factory method for basic recording config
+            fun createBasic(
+                width: Int,
+                height: Int,
+                frameRate: Int = 30,
+                bitrate: Int = 5_000_000,
+                codec: String = MediaFormat.MIMETYPE_VIDEO_AVC
+            ) = RecordingConfig(
+                videoBitrate = bitrate,
+                videoFrameRate = frameRate,
+                videoFormat = codec,
+                videoWidth = width,
+                videoHeight = height
+            )
+        }
+    }
 
-    // Hardware codec information
+    // Available hardware codecs (generic, no assumptions)
+    enum class SupportedCodec(val mimeType: String, val displayName: String) {
+        H264(MediaFormat.MIMETYPE_VIDEO_AVC, "H.264/AVC"),
+        H265(MediaFormat.MIMETYPE_VIDEO_HEVC, "H.265/HEVC"),
+        VP8(MediaFormat.MIMETYPE_VIDEO_VP8, "VP8"),
+        VP9(MediaFormat.MIMETYPE_VIDEO_VP9, "VP9"),
+        AV1(MediaFormat.MIMETYPE_VIDEO_AV1, "AV1")
+    }
+
+    // Hardware codec information (comprehensive)
     data class CodecInfo(
         val name: String,                        // Codec name (e.g., "OMX.qcom.video.encoder.avc")
         val mimeType: String,                    // MIME type (e.g., "video/avc")
@@ -135,13 +161,9 @@ class VideoRecordingManager(
         val rawWidth = metrics.widthPixels
         val rawHeight = metrics.heightPixels
         
-        // Scale down if resolution is too high for performance (default fallback)
-        val scale = if (maxOf(rawWidth, rawHeight) > 1920) {
-            1920f / maxOf(rawWidth, rawHeight)
-        } else 1f
-        
-        displayWidth = (rawWidth * scale).roundToInt()
-        displayHeight = (rawHeight * scale).roundToInt()
+        // Use actual display resolution (no assumptions about scaling)
+        displayWidth = rawWidth
+        displayHeight = rawHeight
         displayDensityDpi = metrics.densityDpi
         
         Log.d(TAG, "Initialized VideoRecordingManager: ${displayWidth}x${displayHeight}@${displayDensityDpi}dpi (defaults)")
@@ -157,6 +179,24 @@ class VideoRecordingManager(
         }
         
         recordingConfig = config
+        
+        // Print full configuration for debugging
+        Log.i(TAG, "=== Starting Recording with Configuration ===")
+        Log.i(TAG, "Resolution: ${config.videoWidth}x${config.videoHeight}")
+        Log.i(TAG, "Frame Rate: ${config.videoFrameRate} fps")
+        Log.i(TAG, "Bitrate: ${config.videoBitrate} bps (${config.videoBitrate / 1_000_000} Mbps)")
+        Log.i(TAG, "Video Format: ${config.videoFormat}")
+        Log.i(TAG, "I-Frame Interval: ${config.iFrameInterval}s")
+        Log.i(TAG, "Bitrate Mode: ${config.bitrateMode}")
+        Log.i(TAG, "Profile: ${config.profile}")
+        Log.i(TAG, "Level: ${config.level}")
+        Log.i(TAG, "Color Format: ${config.colorFormat}")
+        Log.i(TAG, "Audio Enabled: ${config.audioEnabled}")
+        Log.i(TAG, "Output Directory: ${config.outputDirectory}")
+        Log.i(TAG, "Max Duration: ${config.maxRecordingDurationMs}ms")
+        Log.i(TAG, "Display Density: ${config.displayDensityDpi} dpi")
+        Log.i(TAG, "=== End Configuration ===")
+        
         changeState(RecordingState.PREPARING)
         
         try {
@@ -296,34 +336,148 @@ class VideoRecordingManager(
     }
 
     /**
-     * Get optimal recording resolution for current display and VR requirements
+     * Get detailed codec information for all available encoders
      */
-    fun getOptimalResolutions(): List<Pair<Int, Int>> {
-        val resolutions = mutableListOf<Pair<Int, Int>>()
+    fun getDetailedCodecInfo(): List<CodecInfo> {
+        val codecInfoList = mutableListOf<CodecInfo>()
+        val codecList = MediaCodecList(MediaCodecList.ALL_CODECS)
         
-        // VR-optimized resolutions for high-quality recording
-        // These are designed for VR content capture and streaming
-        val vrResolutions = listOf(
-            Pair(3840, 2160), // 4K UHD - Premium VR quality
-            Pair(2560, 1440), // QHD - High VR quality
-            Pair(1920, 1080), // FHD - Standard VR quality
-            Pair(1280, 720),  // HD - Performance VR mode
-            Pair(1024, 512),  // Ultra-wide VR (2:1 aspect ratio)
-            Pair(2048, 1024), // High-res ultra-wide VR
-        )
-        
-        // Always include VR resolutions regardless of display size
-        // VR recording often needs higher resolution than the display
-        resolutions.addAll(vrResolutions)
-        
-        // Add current display resolution as fallback if not already included
-        val displayRes = Pair(displayWidth, displayHeight)
-        if (!resolutions.contains(displayRes)) {
-            resolutions.add(displayRes)
+        for (codecInfo in codecList.codecInfos) {
+            if (!codecInfo.isEncoder) continue
+            
+            for (type in codecInfo.supportedTypes) {
+                if (type.startsWith("video/")) {
+                    try {
+                        val capabilities = codecInfo.getCapabilitiesForType(type)
+                        
+                        codecInfoList.add(
+                            CodecInfo(
+                                name = codecInfo.name,
+                                mimeType = type,
+                                displayName = getCodecDisplayName(type),
+                                isHardwareAccelerated = !codecInfo.name.startsWith("OMX.google"),
+                                supportedProfiles = capabilities.profileLevels.map { it.profile }.distinct(),
+                                supportedLevels = capabilities.profileLevels.map { it.level }.distinct(),
+                                supportedColorFormats = capabilities.colorFormats.toList(),
+                                maxInstances = 1, // Simplified - use default
+                                bitrateRange = null, // Simplified - will be calculated dynamically
+                                frameSizeRange = null // Simplified - will be calculated dynamically
+                            )
+                        )
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Failed to get capabilities for ${codecInfo.name}:$type", e)
+                    }
+                }
+            }
         }
         
-        Log.d(TAG, "Optimal resolutions for VR recording: $resolutions")
-        return resolutions
+        return codecInfoList
+    }
+    
+    private fun getCodecDisplayName(mimeType: String): String {
+        return when (mimeType) {
+            MediaFormat.MIMETYPE_VIDEO_AVC -> "H.264/AVC"
+            MediaFormat.MIMETYPE_VIDEO_HEVC -> "H.265/HEVC"
+            MediaFormat.MIMETYPE_VIDEO_VP8 -> "VP8"
+            MediaFormat.MIMETYPE_VIDEO_VP9 -> "VP9"
+            MediaFormat.MIMETYPE_VIDEO_AV1 -> "AV1"
+            else -> mimeType
+        }
+    }
+
+    /**
+     * Get display information and capabilities
+     */
+    fun getDisplayInfo(): DisplayInfo {
+        val metrics = context.resources.displayMetrics
+        val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as android.view.WindowManager
+        val display = windowManager.defaultDisplay
+        
+        // Get display refresh rate
+        val refreshRate = try {
+            display.refreshRate
+        } catch (e: Exception) {
+            60f // Default fallback
+        }
+        
+        // Calculate common frame rates based on refresh rate
+        val supportedFrameRates = calculateSupportedFrameRates(refreshRate)
+        
+        return DisplayInfo(
+            width = metrics.widthPixels,
+            height = metrics.heightPixels,
+            densityDpi = metrics.densityDpi,
+            refreshRate = refreshRate,
+            supportedFrameRates = supportedFrameRates
+        )
+    }
+    
+    /**
+     * Calculate supported frame rates based on display refresh rate
+     */
+    private fun calculateSupportedFrameRates(displayRefreshRate: Float): List<Int> {
+        val frameRates = mutableListOf<Int>()
+        
+        // Common standard frame rates
+        val commonRates = listOf(24, 25, 30, 48, 50, 60)
+        frameRates.addAll(commonRates)
+        
+        // Add display refresh rate if it's not already included
+        val displayRate = displayRefreshRate.toInt()
+        if (displayRate !in frameRates && displayRate > 0) {
+            frameRates.add(displayRate)
+        }
+        
+        // Add some high refresh rate options if display supports it
+        if (displayRefreshRate >= 90f) {
+            frameRates.addAll(listOf(72, 90, 120))
+        }
+        
+        return frameRates.distinct().sorted()
+    }
+    
+    /**
+     * Get common recording resolutions (generic, not application-specific)
+     */
+    fun getCommonResolutions(): List<Pair<Int, Int>> {
+        val resolutions = mutableListOf<Pair<Int, Int>>()
+        val displayInfo = getDisplayInfo()
+        
+        // Add current display resolution first
+        resolutions.add(Pair(displayInfo.width, displayInfo.height))
+        
+        // Add common video resolutions (16:9 aspect ratio)
+        val common16x9 = listOf(
+            Pair(7680, 4320), // 8K UHD
+            Pair(3840, 2160), // 4K UHD
+            Pair(2560, 1440), // QHD
+            Pair(1920, 1080), // FHD
+            Pair(1280, 720),  // HD
+            Pair(854, 480),   // 480p
+            Pair(640, 360)    // 360p
+        )
+        
+        // Add common ultra-wide resolutions (21:9 aspect ratio)
+        val commonUltrawide = listOf(
+            Pair(3440, 1440), // Ultra-wide QHD
+            Pair(2560, 1080), // Ultra-wide FHD
+            Pair(1920, 800)   // Ultra-wide HD+
+        )
+        
+        // Add other aspect ratios
+        val otherAspects = listOf(
+            Pair(2048, 1024), // 2:1 aspect ratio
+            Pair(1024, 512),  // 2:1 aspect ratio (lower res)
+            Pair(1440, 1440), // 1:1 aspect ratio
+            Pair(1080, 1080)  // 1:1 aspect ratio (lower res)
+        )
+        
+        resolutions.addAll(common16x9)
+        resolutions.addAll(commonUltrawide)
+        resolutions.addAll(otherAspects)
+        
+        // Remove duplicates and sort by total pixels
+        return resolutions.distinct().sortedByDescending { it.first * it.second }
     }
 
     /**
@@ -343,37 +497,77 @@ class VideoRecordingManager(
     }
 
     /**
-     * Get available frame rate presets
+     * Get available frame rates based on display capabilities
      */
-    fun getAvailableFrameRates(): List<FrameRatePreset> {
-        return FrameRatePreset.values().toList()
+    fun getAvailableFrameRates(): List<Int> {
+        return getDisplayInfo().supportedFrameRates
     }
-
+    
     /**
-     * Create a recording configuration with a specific frame rate preset
+     * Create a recording configuration with basic settings
      */
-    fun createConfigWithFrameRate(
-        frameRatePreset: FrameRatePreset,
-        width: Int = 0,
-        height: Int = 0,
+    fun createConfig(
+        width: Int,
+        height: Int,
+        frameRate: Int = 30,
+        bitrate: Int = -1, // -1 = auto-calculate
         codec: SupportedCodec = SupportedCodec.H264
     ): RecordingConfig {
-        val actualWidth = if (width > 0) width else displayWidth
-        val actualHeight = if (height > 0) height else displayHeight
-        val recommendedBitrate = getRecommendedBitrate(actualWidth, actualHeight, frameRatePreset.fps)
+        val actualBitrate = if (bitrate > 0) bitrate else getRecommendedBitrate(width, height, frameRate)
         
         return RecordingConfig(
-            videoBitrate = recommendedBitrate,
-            videoFrameRate = frameRatePreset.fps,
+            videoBitrate = actualBitrate,
+            videoFrameRate = frameRate,
             videoFormat = codec.mimeType,
-            videoWidth = actualWidth,
-            videoHeight = actualHeight,
-            audioEnabled = false,
-            outputDirectory = "",
-            maxRecordingDurationMs = -1L,
-            writeToFileWhileRecording = true
+            videoWidth = width,
+            videoHeight = height
         )
     }
+    
+    /**
+     * Validate recording configuration against device capabilities
+     */
+    fun validateConfig(config: RecordingConfig): ValidationResult {
+        val errors = mutableListOf<String>()
+        val warnings = mutableListOf<String>()
+        
+        // Validate codec support
+        val availableCodecs = getAvailableCodecs()
+        val codecSupported = availableCodecs.any { it.mimeType == config.videoFormat }
+        if (!codecSupported) {
+            errors.add("Codec ${config.videoFormat} not supported on this device")
+        }
+        
+        // Validate frame rate
+        val availableFrameRates = getAvailableFrameRates()
+        if (config.videoFrameRate !in availableFrameRates) {
+            warnings.add("Frame rate ${config.videoFrameRate} may not be optimal for this display")
+        }
+        
+        // Validate resolution
+        if (config.videoWidth <= 0 || config.videoHeight <= 0) {
+            warnings.add("Invalid resolution: ${config.videoWidth}x${config.videoHeight}")
+        }
+        
+        // Validate bitrate
+        if (config.videoBitrate < 100_000) {
+            warnings.add("Very low bitrate may result in poor quality")
+        } else if (config.videoBitrate > 100_000_000) {
+            warnings.add("Very high bitrate may cause performance issues")
+        }
+        
+        return ValidationResult(
+            isValid = errors.isEmpty(),
+            errors = errors,
+            warnings = warnings
+        )
+    }
+    
+    data class ValidationResult(
+        val isValid: Boolean,
+        val errors: List<String>,
+        val warnings: List<String>
+    )
 
     /**
      * Setup the complete zero-copy recording pipeline
@@ -483,7 +677,15 @@ class VideoRecordingManager(
         // Get the input surface for zero-copy pipeline
         encoderInputSurface = videoEncoder!!.createInputSurface()
         
-        Log.d(TAG, "Video encoder configured: ${actualWidth}x${actualHeight}, ${config.videoBitrate} bps, ${config.videoFrameRate} fps, codec: ${config.videoFormat}")
+        Log.i(TAG, "=== Video Encoder Configuration Applied ===")
+        Log.i(TAG, "Actual Resolution: ${actualWidth}x${actualHeight}")
+        Log.i(TAG, "Applied Frame Rate: ${config.videoFrameRate} fps")
+        Log.i(TAG, "Applied Bitrate: ${config.videoBitrate} bps (${config.videoBitrate / 1_000_000} Mbps)")
+        Log.i(TAG, "Applied Codec: ${config.videoFormat}")
+        Log.i(TAG, "MediaFormat KEY_FRAME_RATE: ${videoFormat.getInteger(MediaFormat.KEY_FRAME_RATE)}")
+        Log.i(TAG, "MediaFormat KEY_BIT_RATE: ${videoFormat.getInteger(MediaFormat.KEY_BIT_RATE)}")
+        Log.i(TAG, "MediaFormat KEY_I_FRAME_INTERVAL: ${videoFormat.getInteger(MediaFormat.KEY_I_FRAME_INTERVAL)}")
+        Log.i(TAG, "=== End Encoder Configuration ===")
     }
 
     /**
@@ -509,7 +711,48 @@ class VideoRecordingManager(
             null
         )
         
-        Log.d(TAG, "VirtualDisplay created with direct surface connection")
+        // Get VirtualDisplay information after creation
+        val virtualDisplayInfo = virtualDisplay?.display
+        val virtualDisplayRefreshRate = virtualDisplayInfo?.refreshRate ?: 0f
+        val virtualDisplayMode = virtualDisplayInfo?.mode
+        val virtualDisplaySupportedModes = virtualDisplayInfo?.supportedModes
+        
+        Log.i(TAG, "=== VirtualDisplay Configuration ===")
+        Log.i(TAG, "VirtualDisplay Resolution: ${actualWidth}x${actualHeight}")
+        Log.i(TAG, "VirtualDisplay Density: ${displayDensityDpi} dpi")
+        Log.i(TAG, "VirtualDisplay Flags: ${DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR}")
+        Log.i(TAG, "VirtualDisplay Refresh Rate: ${virtualDisplayRefreshRate} Hz")
+        
+        if (virtualDisplayMode != null) {
+            Log.i(TAG, "VirtualDisplay Mode: ${virtualDisplayMode.physicalWidth}x${virtualDisplayMode.physicalHeight} @ ${virtualDisplayMode.refreshRate}Hz")
+        }
+        
+        if (virtualDisplaySupportedModes != null && virtualDisplaySupportedModes.isNotEmpty()) {
+            Log.i(TAG, "VirtualDisplay Supported Modes:")
+            virtualDisplaySupportedModes.forEachIndexed { index, mode ->
+                Log.i(TAG, "  Mode $index: ${mode.physicalWidth}x${mode.physicalHeight} @ ${mode.refreshRate}Hz")
+            }
+        }
+        
+        Log.i(TAG, "Surface Connection: Direct to MediaCodec input")
+        
+        // Log if there are multiple modes available (VirtualDisplay doesn't support mode switching)
+        if (virtualDisplaySupportedModes != null && virtualDisplaySupportedModes.isNotEmpty()) {
+            val targetFrameRate = config.videoFrameRate.toFloat()
+            val matchingMode = virtualDisplaySupportedModes.find { mode ->
+                Math.abs(mode.refreshRate - targetFrameRate) < 1.0f // Allow 1Hz tolerance
+            }
+            
+            if (matchingMode != null) {
+                Log.i(TAG, "VirtualDisplay has mode matching target frame rate: ${matchingMode.physicalWidth}x${matchingMode.physicalHeight} @ ${matchingMode.refreshRate}Hz")
+            } else {
+                Log.w(TAG, "No VirtualDisplay mode found matching target frame rate: ${targetFrameRate}Hz")
+                val availableRates = virtualDisplaySupportedModes.map { it.refreshRate }.joinToString(", ")
+                Log.i(TAG, "Available VirtualDisplay refresh rates: ${availableRates}Hz")
+            }
+        }
+        
+        Log.i(TAG, "=== End VirtualDisplay Configuration ===")
     }
 
     /**
