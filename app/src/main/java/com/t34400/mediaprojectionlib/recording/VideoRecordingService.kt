@@ -16,6 +16,7 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
+import com.t34400.mediaprojectionlib.logging.UnityLogManager
 
 /**
  * VideoRecordingService provides a foreground service for video recording operations.
@@ -117,7 +118,7 @@ class VideoRecordingService : Service() {
     
     override fun onCreate() {
         super.onCreate()
-        Log.d(TAG, "VideoRecordingService created")
+        UnityLogManager.logDebug(TAG, "VideoRecordingService created")
         
         // Initialize notification system
         setupNotificationChannel()
@@ -131,7 +132,7 @@ class VideoRecordingService : Service() {
     }
     
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        Log.d(TAG, "onStartCommand: ${intent?.action}")
+        UnityLogManager.logDebug(TAG, "onStartCommand: ${intent?.action}")
         
         when (intent?.action) {
             ACTION_START_RECORDING -> {
@@ -150,12 +151,12 @@ class VideoRecordingService : Service() {
     }
     
     override fun onBind(intent: Intent): IBinder {
-        Log.d(TAG, "Service bound")
+        UnityLogManager.logDebug(TAG, "Service bound")
         return binder
     }
     
     override fun onDestroy() {
-        Log.d(TAG, "VideoRecordingService destroyed")
+        UnityLogManager.logDebug(TAG, "VideoRecordingService destroyed")
         
         // Ensure recording is stopped
         if (isRecording) {
@@ -188,7 +189,7 @@ class VideoRecordingService : Service() {
             }
         }
         
-        Log.d(TAG, "VideoRecordingManager initialized")
+        UnityLogManager.logDebug(TAG, "VideoRecordingManager initialized")
     }
     
     /**
@@ -196,7 +197,7 @@ class VideoRecordingService : Service() {
      */
     private fun handleStartRecording(intent: Intent) {
         if (isRecording) {
-            Log.w(TAG, "Recording already in progress")
+            UnityLogManager.logWarning(TAG, "Recording already in progress")
             return
         }
         
@@ -210,19 +211,19 @@ class VideoRecordingService : Service() {
             maxRecordingDurationMs = intent.getLongExtra(EXTRA_MAX_DURATION_MS, -1L)
         )
         
-        Log.i(TAG, "Starting recording with config: $config")
+        UnityLogManager.logInfo(TAG, "Starting recording with config: $config")
         
         // Check if MediaProjection permission data is provided
         val resultCode = intent.getIntExtra("resultCode", -1)
         val resultData = intent.getParcelableExtra<Intent>("data")
         
-        Log.d(TAG, "Received permission data: resultCode=$resultCode, data=$resultData")
+        UnityLogManager.logDebug(TAG, "Received permission data: resultCode=$resultCode, data=$resultData")
         
         val success = if (resultCode == Activity.RESULT_OK && resultData != null) {
-            Log.d(TAG, "Using provided MediaProjection permission data")
+            UnityLogManager.logDebug(TAG, "Using provided MediaProjection permission data")
             videoRecordingManager?.startRecordingWithPermission(config, resultCode, resultData) ?: false
         } else {
-            Log.d(TAG, "No permission data provided, using standard flow")
+            UnityLogManager.logDebug(TAG, "No permission data provided, using standard flow")
             videoRecordingManager?.startRecording(config) ?: false
         }
         
@@ -230,7 +231,7 @@ class VideoRecordingService : Service() {
             recordingStartTime = System.currentTimeMillis()
             updateNotification(createRecordingNotification("Preparing to record..."))
         } else {
-            Log.e(TAG, "Failed to start recording")
+            UnityLogManager.logError(TAG, "Failed to start recording")
             updateNotification(createErrorNotification("Failed to start recording"))
         }
     }
@@ -240,16 +241,16 @@ class VideoRecordingService : Service() {
      */
     private fun handleStopRecording() {
         if (!isRecording) {
-            Log.w(TAG, "No recording in progress")
+            UnityLogManager.logWarning(TAG, "No recording in progress")
             return
         }
         
-        Log.i(TAG, "Stopping recording")
+        UnityLogManager.logInfo(TAG, "Stopping recording")
         updateNotification(createRecordingNotification("Stopping recording..."))
         
         val success = videoRecordingManager?.stopRecording() ?: false
         if (!success) {
-            Log.e(TAG, "Failed to stop recording")
+            UnityLogManager.logError(TAG, "Failed to stop recording")
             updateNotification(createErrorNotification("Failed to stop recording"))
         }
     }
@@ -258,7 +259,7 @@ class VideoRecordingService : Service() {
      * Handle stop service intent
      */
     private fun handleStopService() {
-        Log.i(TAG, "Stopping service")
+        UnityLogManager.logInfo(TAG, "Stopping service")
         
         if (isRecording) {
             videoRecordingManager?.stopRecording()
@@ -272,7 +273,7 @@ class VideoRecordingService : Service() {
      * Handle recording state changes
      */
     private fun handleRecordingStateChanged(state: VideoRecordingManager.RecordingState) {
-        Log.d(TAG, "Recording state changed: $state")
+        UnityLogManager.logDebug(TAG, "Recording state changed: $state")
         
         // Broadcast state change to external apps
         broadcastStateChange(state.name)
@@ -310,7 +311,7 @@ class VideoRecordingService : Service() {
      * Handle recording completion
      */
     private fun handleRecordingComplete(outputPath: String) {
-        Log.i(TAG, "Recording completed: $outputPath")
+        UnityLogManager.logInfo(TAG, "Recording completed: $outputPath")
         
         currentOutputFile = outputPath
         isRecording = false
@@ -332,7 +333,7 @@ class VideoRecordingService : Service() {
      * Handle recording errors
      */
     private fun handleRecordingError(errorMessage: String) {
-        Log.e(TAG, "Recording error: $errorMessage")
+        UnityLogManager.logError(TAG, "Recording error: $errorMessage")
         
         isRecording = false
         
@@ -359,7 +360,7 @@ class VideoRecordingService : Service() {
             val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             notificationManager.createNotificationChannel(channel)
             
-            Log.d(TAG, "Notification channel created")
+            UnityLogManager.logDebug(TAG, "Notification channel created")
         }
     }
     
@@ -517,9 +518,9 @@ class VideoRecordingService : Service() {
                 putExtra(EXTRA_RECORDING_STATE, state)
             }
             LocalBroadcastManager.getInstance(this).sendBroadcast(intent)
-            Log.d(TAG, "Broadcasted state change: $state")
+            UnityLogManager.logDebug(TAG, "Broadcasted state change: $state")
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to broadcast state change", e)
+            UnityLogManager.logWarning(TAG, "Failed to broadcast state change", e)
         }
     }
     
@@ -532,9 +533,9 @@ class VideoRecordingService : Service() {
                 putExtra(EXTRA_OUTPUT_PATH, outputPath)
             }
             LocalBroadcastManager.getInstance(this).sendBroadcast(intent)
-            Log.d(TAG, "Broadcasted recording completion: $outputPath")
+            UnityLogManager.logDebug(TAG, "Broadcasted recording completion: $outputPath")
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to broadcast recording completion", e)
+            UnityLogManager.logWarning(TAG, "Failed to broadcast recording completion", e)
         }
     }
     
@@ -547,9 +548,9 @@ class VideoRecordingService : Service() {
                 putExtra(EXTRA_ERROR_MESSAGE, errorMessage)
             }
             LocalBroadcastManager.getInstance(this).sendBroadcast(intent)
-            Log.d(TAG, "Broadcasted recording error: $errorMessage")
+            UnityLogManager.logDebug(TAG, "Broadcasted recording error: $errorMessage")
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to broadcast recording error", e)
+            UnityLogManager.logWarning(TAG, "Failed to broadcast recording error", e)
         }
     }
 }

@@ -38,7 +38,7 @@ class BitmapSaver (
                 outputStream.flush()
                 outputStream.close()
             } catch (e: IOException) {
-                Log.e(TAG, "Failed to save jpg file.")
+                UnityLogManager.logError(TAG, "Failed to save jpg file.")
             }
         }.start()
     }

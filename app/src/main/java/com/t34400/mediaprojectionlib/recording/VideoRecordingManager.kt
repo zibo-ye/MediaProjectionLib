@@ -17,6 +17,7 @@ import android.os.HandlerThread
 import android.util.Log
 import android.view.Surface
 import com.t34400.mediaprojectionlib.core.MediaProjectionRequestActivity
+import com.t34400.mediaprojectionlib.logging.UnityLogManager
 import java.io.File
 import java.nio.ByteBuffer
 import kotlin.math.roundToInt
@@ -166,7 +167,7 @@ class VideoRecordingManager(
         displayHeight = rawHeight
         displayDensityDpi = metrics.densityDpi
         
-        Log.d(TAG, "Initialized VideoRecordingManager: ${displayWidth}x${displayHeight}@${displayDensityDpi}dpi (defaults)")
+        UnityLogManager.logInfo(TAG, "Initialized VideoRecordingManager: ${displayWidth}x${displayHeight}@${displayDensityDpi}dpi (defaults)")
     }
 
     /**
@@ -174,28 +175,28 @@ class VideoRecordingManager(
      */
     fun startRecording(config: RecordingConfig): Boolean {
         if (currentState != RecordingState.IDLE) {
-            Log.w(TAG, "Cannot start recording: current state is $currentState")
+            UnityLogManager.logWarning(TAG, "Cannot start recording: current state is $currentState")
             return false
         }
         
         recordingConfig = config
         
         // Print full configuration for debugging
-        Log.i(TAG, "=== Starting Recording with Configuration ===")
-        Log.i(TAG, "Resolution: ${config.videoWidth}x${config.videoHeight}")
-        Log.i(TAG, "Frame Rate: ${config.videoFrameRate} fps")
-        Log.i(TAG, "Bitrate: ${config.videoBitrate} bps (${config.videoBitrate / 1_000_000} Mbps)")
-        Log.i(TAG, "Video Format: ${config.videoFormat}")
-        Log.i(TAG, "I-Frame Interval: ${config.iFrameInterval}s")
-        Log.i(TAG, "Bitrate Mode: ${config.bitrateMode}")
-        Log.i(TAG, "Profile: ${config.profile}")
-        Log.i(TAG, "Level: ${config.level}")
-        Log.i(TAG, "Color Format: ${config.colorFormat}")
-        Log.i(TAG, "Audio Enabled: ${config.audioEnabled}")
-        Log.i(TAG, "Output Directory: ${config.outputDirectory}")
-        Log.i(TAG, "Max Duration: ${config.maxRecordingDurationMs}ms")
-        Log.i(TAG, "Display Density: ${config.displayDensityDpi} dpi")
-        Log.i(TAG, "=== End Configuration ===")
+        UnityLogManager.logInfo(TAG, "=== Starting Recording with Configuration ===")
+        UnityLogManager.logInfo(TAG, "Resolution: ${config.videoWidth}x${config.videoHeight}")
+        UnityLogManager.logInfo(TAG, "Frame Rate: ${config.videoFrameRate} fps")
+        UnityLogManager.logInfo(TAG, "Bitrate: ${config.videoBitrate} bps (${config.videoBitrate / 1_000_000} Mbps)")
+        UnityLogManager.logInfo(TAG, "Video Format: ${config.videoFormat}")
+        UnityLogManager.logInfo(TAG, "I-Frame Interval: ${config.iFrameInterval}s")
+        UnityLogManager.logInfo(TAG, "Bitrate Mode: ${config.bitrateMode}")
+        UnityLogManager.logInfo(TAG, "Profile: ${config.profile}")
+        UnityLogManager.logInfo(TAG, "Level: ${config.level}")
+        UnityLogManager.logInfo(TAG, "Color Format: ${config.colorFormat}")
+        UnityLogManager.logInfo(TAG, "Audio Enabled: ${config.audioEnabled}")
+        UnityLogManager.logInfo(TAG, "Output Directory: ${config.outputDirectory}")
+        UnityLogManager.logInfo(TAG, "Max Duration: ${config.maxRecordingDurationMs}ms")
+        UnityLogManager.logInfo(TAG, "Display Density: ${config.displayDensityDpi} dpi")
+        UnityLogManager.logInfo(TAG, "=== End Configuration ===")
         
         changeState(RecordingState.PREPARING)
         
@@ -213,7 +214,7 @@ class VideoRecordingManager(
             return setupRecordingPipeline()
             
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to start recording", e)
+            UnityLogManager.logError(TAG, "Failed to start recording", e)
             handleError("Failed to start recording: ${e.message}")
             return false
         }
@@ -224,9 +225,9 @@ class VideoRecordingManager(
      */
     fun startRecordingWithPermission(config: RecordingConfig, resultCode: Int, resultData: Intent): Boolean {
         if (currentState != RecordingState.IDLE) {
-            Log.w(TAG, "Cannot start recording: current state is $currentState")
+            UnityLogManager.logWarning(TAG, "Cannot start recording: current state is $currentState")
             if (currentState == RecordingState.ERROR) {
-                Log.d(TAG, "Resetting from ERROR state")
+                UnityLogManager.logDebug(TAG, "Resetting from ERROR state")
                 changeState(RecordingState.IDLE)
             } else {
                 return false
@@ -244,7 +245,7 @@ class VideoRecordingManager(
             return setupRecordingPipeline()
             
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to start recording with permission", e)
+            UnityLogManager.logError(TAG, "Failed to start recording with permission", e)
             handleError("Failed to start recording: ${e.message}")
             return false
         }
@@ -255,7 +256,7 @@ class VideoRecordingManager(
      */
     fun stopRecording(): Boolean {
         if (currentState != RecordingState.RECORDING) {
-            Log.w(TAG, "Cannot stop recording: current state is $currentState")
+            UnityLogManager.logWarning(TAG, "Cannot stop recording: current state is $currentState")
             return false
         }
         
@@ -268,7 +269,7 @@ class VideoRecordingManager(
                 // For surface input, we need to signal end of stream differently
                 // The proper way is to stop the VirtualDisplay first, which will cause
                 // the encoder to receive end of stream when no more frames are available
-                Log.d(TAG, "Stopping VirtualDisplay to signal end of stream")
+                UnityLogManager.logDebug(TAG, "Stopping VirtualDisplay to signal end of stream")
                 virtualDisplay?.release()
                 virtualDisplay = null
             }
@@ -277,7 +278,7 @@ class VideoRecordingManager(
             return true
             
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to stop recording", e)
+            UnityLogManager.logError(TAG, "Failed to stop recording", e)
             handleError("Failed to stop recording: ${e.message}")
             return false
         }
@@ -318,20 +319,20 @@ class VideoRecordingManager(
                 encoder.release() // Clean up immediately
                 
                 availableCodecs.add(codec)
-                Log.d(TAG, "Found available codec: ${codec.displayName}")
+                UnityLogManager.logDebug(TAG, "Found available codec: ${codec.displayName}")
                 
             } catch (e: Exception) {
-                Log.d(TAG, "Codec ${codec.displayName} not available: ${e.message}")
+                UnityLogManager.logDebug(TAG, "Codec ${codec.displayName} not available: ${e.message}")
             }
         }
         
         // Ensure H.264 is always included as fallback (most widely supported)
         if (availableCodecs.isEmpty()) {
             availableCodecs.add(SupportedCodec.H264)
-            Log.w(TAG, "No codecs detected, adding H.264 as fallback")
+            UnityLogManager.logWarning(TAG, "No codecs detected, adding H.264 as fallback")
         }
         
-        Log.i(TAG, "Available codecs: ${availableCodecs.map { it.displayName }}")
+        UnityLogManager.logInfo(TAG, "Available codecs: ${availableCodecs.map { it.displayName }}")
         return availableCodecs
     }
 
@@ -365,7 +366,7 @@ class VideoRecordingManager(
                             )
                         )
                     } catch (e: Exception) {
-                        Log.w(TAG, "Failed to get capabilities for ${codecInfo.name}:$type", e)
+                        UnityLogManager.logWarning(TAG, "Failed to get capabilities for ${codecInfo.name}:$type", e)
                     }
                 }
             }
@@ -596,13 +597,13 @@ class VideoRecordingManager(
             changeState(RecordingState.RECORDING)
             
             // Give MediaProjection a moment to stabilize before declaring success
-            Log.d(TAG, "MediaProjection pipeline established, waiting for stabilization...")
+            UnityLogManager.logDebug(TAG, "MediaProjection pipeline established, waiting for stabilization...")
             
-            Log.i(TAG, "Recording pipeline setup complete: ${outputFile?.absolutePath}")
+            UnityLogManager.logInfo(TAG, "Recording pipeline setup complete: ${outputFile?.absolutePath}")
             return true
             
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to setup recording pipeline", e)
+            UnityLogManager.logError(TAG, "Failed to setup recording pipeline", e)
             handleError("Failed to setup recording pipeline: ${e.message}")
             cleanupResources()
             return false
@@ -626,7 +627,7 @@ class VideoRecordingManager(
         val timestamp = System.currentTimeMillis()
         outputFile = File(outputDir, "recording_$timestamp.mp4")
         
-        Log.d(TAG, "Output file: ${outputFile!!.absolutePath}")
+        UnityLogManager.logDebug(TAG, "Output file: ${outputFile!!.absolutePath}")
     }
 
     /**
@@ -635,7 +636,7 @@ class VideoRecordingManager(
     private fun setupMediaMuxer() {
         outputFile?.let { file ->
             mediaMuxer = MediaMuxer(file.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
-            Log.d(TAG, "MediaMuxer created: ${file.absolutePath}")
+            UnityLogManager.logDebug(TAG, "MediaMuxer created: ${file.absolutePath}")
         }
     }
 
@@ -677,15 +678,15 @@ class VideoRecordingManager(
         // Get the input surface for zero-copy pipeline
         encoderInputSurface = videoEncoder!!.createInputSurface()
         
-        Log.i(TAG, "=== Video Encoder Configuration Applied ===")
-        Log.i(TAG, "Actual Resolution: ${actualWidth}x${actualHeight}")
-        Log.i(TAG, "Applied Frame Rate: ${config.videoFrameRate} fps")
-        Log.i(TAG, "Applied Bitrate: ${config.videoBitrate} bps (${config.videoBitrate / 1_000_000} Mbps)")
-        Log.i(TAG, "Applied Codec: ${config.videoFormat}")
-        Log.i(TAG, "MediaFormat KEY_FRAME_RATE: ${videoFormat.getInteger(MediaFormat.KEY_FRAME_RATE)}")
-        Log.i(TAG, "MediaFormat KEY_BIT_RATE: ${videoFormat.getInteger(MediaFormat.KEY_BIT_RATE)}")
-        Log.i(TAG, "MediaFormat KEY_I_FRAME_INTERVAL: ${videoFormat.getInteger(MediaFormat.KEY_I_FRAME_INTERVAL)}")
-        Log.i(TAG, "=== End Encoder Configuration ===")
+        UnityLogManager.logInfo(TAG, "=== Video Encoder Configuration Applied ===")
+        UnityLogManager.logInfo(TAG, "Actual Resolution: ${actualWidth}x${actualHeight}")
+        UnityLogManager.logInfo(TAG, "Applied Frame Rate: ${config.videoFrameRate} fps")
+        UnityLogManager.logInfo(TAG, "Applied Bitrate: ${config.videoBitrate} bps (${config.videoBitrate / 1_000_000} Mbps)")
+        UnityLogManager.logInfo(TAG, "Applied Codec: ${config.videoFormat}")
+        UnityLogManager.logInfo(TAG, "MediaFormat KEY_FRAME_RATE: ${videoFormat.getInteger(MediaFormat.KEY_FRAME_RATE)}")
+        UnityLogManager.logInfo(TAG, "MediaFormat KEY_BIT_RATE: ${videoFormat.getInteger(MediaFormat.KEY_BIT_RATE)}")
+        UnityLogManager.logInfo(TAG, "MediaFormat KEY_I_FRAME_INTERVAL: ${videoFormat.getInteger(MediaFormat.KEY_I_FRAME_INTERVAL)}")
+        UnityLogManager.logInfo(TAG, "=== End Encoder Configuration ===")
     }
 
     /**
@@ -717,24 +718,24 @@ class VideoRecordingManager(
         val virtualDisplayMode = virtualDisplayInfo?.mode
         val virtualDisplaySupportedModes = virtualDisplayInfo?.supportedModes
         
-        Log.i(TAG, "=== VirtualDisplay Configuration ===")
-        Log.i(TAG, "VirtualDisplay Resolution: ${actualWidth}x${actualHeight}")
-        Log.i(TAG, "VirtualDisplay Density: ${displayDensityDpi} dpi")
-        Log.i(TAG, "VirtualDisplay Flags: ${DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR}")
-        Log.i(TAG, "VirtualDisplay Refresh Rate: ${virtualDisplayRefreshRate} Hz")
+        UnityLogManager.logInfo(TAG, "=== VirtualDisplay Configuration ===")
+        UnityLogManager.logInfo(TAG, "VirtualDisplay Resolution: ${actualWidth}x${actualHeight}")
+        UnityLogManager.logInfo(TAG, "VirtualDisplay Density: ${displayDensityDpi} dpi")
+        UnityLogManager.logInfo(TAG, "VirtualDisplay Flags: ${DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR}")
+        UnityLogManager.logInfo(TAG, "VirtualDisplay Refresh Rate: ${virtualDisplayRefreshRate} Hz")
         
         if (virtualDisplayMode != null) {
-            Log.i(TAG, "VirtualDisplay Mode: ${virtualDisplayMode.physicalWidth}x${virtualDisplayMode.physicalHeight} @ ${virtualDisplayMode.refreshRate}Hz")
+            UnityLogManager.logInfo(TAG, "VirtualDisplay Mode: ${virtualDisplayMode.physicalWidth}x${virtualDisplayMode.physicalHeight} @ ${virtualDisplayMode.refreshRate}Hz")
         }
         
         if (virtualDisplaySupportedModes != null && virtualDisplaySupportedModes.isNotEmpty()) {
-            Log.i(TAG, "VirtualDisplay Supported Modes:")
+            UnityLogManager.logInfo(TAG, "VirtualDisplay Supported Modes:")
             virtualDisplaySupportedModes.forEachIndexed { index, mode ->
-                Log.i(TAG, "  Mode $index: ${mode.physicalWidth}x${mode.physicalHeight} @ ${mode.refreshRate}Hz")
+                UnityLogManager.logInfo(TAG, "  Mode $index: ${mode.physicalWidth}x${mode.physicalHeight} @ ${mode.refreshRate}Hz")
             }
         }
         
-        Log.i(TAG, "Surface Connection: Direct to MediaCodec input")
+        UnityLogManager.logInfo(TAG, "Surface Connection: Direct to MediaCodec input")
         
         // Log if there are multiple modes available (VirtualDisplay doesn't support mode switching)
         if (virtualDisplaySupportedModes != null && virtualDisplaySupportedModes.isNotEmpty()) {
@@ -744,15 +745,15 @@ class VideoRecordingManager(
             }
             
             if (matchingMode != null) {
-                Log.i(TAG, "VirtualDisplay has mode matching target frame rate: ${matchingMode.physicalWidth}x${matchingMode.physicalHeight} @ ${matchingMode.refreshRate}Hz")
+                UnityLogManager.logInfo(TAG, "VirtualDisplay has mode matching target frame rate: ${matchingMode.physicalWidth}x${matchingMode.physicalHeight} @ ${matchingMode.refreshRate}Hz")
             } else {
-                Log.w(TAG, "No VirtualDisplay mode found matching target frame rate: ${targetFrameRate}Hz")
+                UnityLogManager.logWarning(TAG, "No VirtualDisplay mode found matching target frame rate: ${targetFrameRate}Hz")
                 val availableRates = virtualDisplaySupportedModes.map { it.refreshRate }.joinToString(", ")
-                Log.i(TAG, "Available VirtualDisplay refresh rates: ${availableRates}Hz")
+                UnityLogManager.logInfo(TAG, "Available VirtualDisplay refresh rates: ${availableRates}Hz")
             }
         }
         
-        Log.i(TAG, "=== End VirtualDisplay Configuration ===")
+        UnityLogManager.logInfo(TAG, "=== End VirtualDisplay Configuration ===")
     }
 
     /**
@@ -770,7 +771,7 @@ class VideoRecordingManager(
         // Start processing encoded frames
         encoderHandler!!.post { processEncodedFrames() }
         
-        Log.d(TAG, "Encoding thread started")
+        UnityLogManager.logDebug(TAG, "Encoding thread started")
     }
 
     /**
@@ -794,7 +795,7 @@ class VideoRecordingManager(
                     videoTrackIndex = muxer.addTrack(newFormat)
                     muxer.start()
                     muxerStarted = true
-                    Log.d(TAG, "MediaMuxer started, video track index: $videoTrackIndex")
+                    UnityLogManager.logDebug(TAG, "MediaMuxer started, video track index: $videoTrackIndex")
                 }
                 
                 outputBufferIndex == MediaCodec.INFO_TRY_AGAIN_LATER -> {
@@ -809,14 +810,14 @@ class VideoRecordingManager(
                     val encodedData = encoder.getOutputBuffer(outputBufferIndex)
                     
                     if (encodedData == null) {
-                        Log.w(TAG, "Encoder output buffer was null")
+                        UnityLogManager.logWarning(TAG, "Encoder output buffer was null")
                         encoder.releaseOutputBuffer(outputBufferIndex, false)
                         continue
                     }
                     
                     if (bufferInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG != 0) {
                         // Codec config frame (SPS/PPS), don't write to muxer
-                        Log.d(TAG, "Ignoring codec config frame")
+                        UnityLogManager.logDebug(TAG, "Ignoring codec config frame")
                         bufferInfo.size = 0
                     }
                     
@@ -826,24 +827,24 @@ class VideoRecordingManager(
                         encodedData.limit(bufferInfo.offset + bufferInfo.size)
                         
                         muxer.writeSampleData(videoTrackIndex, encodedData, bufferInfo)
-                        Log.v(TAG, "Wrote frame: ${bufferInfo.size} bytes, pts: ${bufferInfo.presentationTimeUs}")
+                        UnityLogManager.logInfo(TAG, "Wrote frame: ${bufferInfo.size} bytes, pts: ${bufferInfo.presentationTimeUs}")
                     }
                     
                     encoder.releaseOutputBuffer(outputBufferIndex, false)
                     
                     // Check for end of stream
                     if (bufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) {
-                        Log.i(TAG, "End of stream reached")
+                        UnityLogManager.logInfo(TAG, "End of stream reached")
                         break
                     }
                 }
             }
             } catch (e: IllegalStateException) {
                 // Handle case where encoder is stopped while dequeuing
-                Log.w(TAG, "Encoder dequeue interrupted, likely due to cleanup: ${e.message}")
+                UnityLogManager.logWarning(TAG, "Encoder dequeue interrupted, likely due to cleanup: ${e.message}")
                 break
             } catch (e: Exception) {
-                Log.e(TAG, "Error processing encoded frames", e)
+                UnityLogManager.logError(TAG, "Error processing encoded frames", e)
                 break
             }
         }
@@ -860,7 +861,7 @@ class VideoRecordingManager(
             // Stop and release MediaMuxer
             if (muxerStarted) {
                 mediaMuxer?.stop()
-                Log.d(TAG, "MediaMuxer stopped")
+                UnityLogManager.logDebug(TAG, "MediaMuxer stopped")
             }
             
             // Cleanup all resources
@@ -872,10 +873,10 @@ class VideoRecordingManager(
             onRecordingComplete?.invoke(outputPath)
             
             val duration = System.currentTimeMillis() - recordingStartTime
-            Log.i(TAG, "Recording completed: $outputPath (duration: ${duration}ms)")
+            UnityLogManager.logInfo(TAG, "Recording completed: $outputPath (duration: ${duration}ms)")
             
         } catch (e: Exception) {
-            Log.e(TAG, "Error finalizing recording", e)
+            UnityLogManager.logError(TAG, "Error finalizing recording", e)
             handleError("Error finalizing recording: ${e.message}")
         }
     }
@@ -890,10 +891,10 @@ class VideoRecordingManager(
         // Register a callback to handle MediaProjection lifecycle
         val projectionCallback = callback ?: object : MediaProjection.Callback() {
             override fun onStop() {
-                Log.d(TAG, "MediaProjection stopped")
+                UnityLogManager.logDebug(TAG, "MediaProjection stopped")
                 // Only treat as error if we're actively recording AND not intentionally stopping
                 if ((currentState == RecordingState.RECORDING || currentState == RecordingState.PREPARING) && !isIntentionallyStopping) {
-                    Log.w(TAG, "MediaProjection stopped unexpectedly during recording")
+                    UnityLogManager.logWarning(TAG, "MediaProjection stopped unexpectedly during recording")
                     // Try to finalize the recording gracefully instead of error
                     if (currentState == RecordingState.RECORDING) {
                         isIntentionallyStopping = true
@@ -902,7 +903,7 @@ class VideoRecordingManager(
                         handleError("MediaProjection stopped during setup")
                     }
                 } else {
-                    Log.d(TAG, "MediaProjection stopped normally (intentional: $isIntentionallyStopping)")
+                    UnityLogManager.logDebug(TAG, "MediaProjection stopped normally (intentional: $isIntentionallyStopping)")
                     // Reset the flag
                     isIntentionallyStopping = false
                 }
@@ -910,7 +911,7 @@ class VideoRecordingManager(
         }
         mediaProjection?.registerCallback(projectionCallback, null)
         
-        Log.d(TAG, "MediaProjection registered")
+        UnityLogManager.logDebug(TAG, "MediaProjection registered")
     }
 
     /**
@@ -920,7 +921,7 @@ class VideoRecordingManager(
         val oldState = currentState
         currentState = newState
         
-        Log.d(TAG, "State changed: $oldState -> $newState")
+        UnityLogManager.logDebug(TAG, "State changed: $oldState -> $newState")
         onRecordingStateChanged?.invoke(newState)
     }
 
@@ -928,7 +929,7 @@ class VideoRecordingManager(
      * Handle recording errors
      */
     private fun handleError(message: String) {
-        Log.e(TAG, "Recording error: $message")
+        UnityLogManager.logError(TAG, "Recording error: $message")
         changeState(RecordingState.ERROR)
         onRecordingError?.invoke(message)
         cleanupResources()
@@ -949,7 +950,7 @@ class VideoRecordingManager(
                 try {
                     thread.join(2000) // Wait up to 2 seconds
                 } catch (e: InterruptedException) {
-                    Log.w(TAG, "Interrupted while waiting for encoder thread to finish")
+                    UnityLogManager.logWarning(TAG, "Interrupted while waiting for encoder thread to finish")
                 }
             }
             encoderThread = null
@@ -961,7 +962,7 @@ class VideoRecordingManager(
                     encoder.stop()
                     encoder.release()
                 } catch (e: Exception) {
-                    Log.w(TAG, "Error stopping encoder", e)
+                    UnityLogManager.logWarning(TAG, "Error stopping encoder", e)
                 }
             }
             videoEncoder = null
@@ -975,7 +976,7 @@ class VideoRecordingManager(
                 try {
                     muxer.release()
                 } catch (e: Exception) {
-                    Log.w(TAG, "Error releasing muxer", e)
+                    UnityLogManager.logWarning(TAG, "Error releasing muxer", e)
                 }
             }
             mediaMuxer = null
@@ -984,9 +985,9 @@ class VideoRecordingManager(
             mediaProjection?.let { projection ->
                 try {
                     projection.stop()
-                    Log.d(TAG, "MediaProjection stopped and released")
+                    UnityLogManager.logDebug(TAG, "MediaProjection stopped and released")
                 } catch (e: Exception) {
-                    Log.w(TAG, "Error stopping MediaProjection", e)
+                    UnityLogManager.logWarning(TAG, "Error stopping MediaProjection", e)
                 }
             }
             mediaProjection = null
@@ -996,10 +997,10 @@ class VideoRecordingManager(
             muxerStarted = false
             isIntentionallyStopping = false
             
-            Log.d(TAG, "Resources cleaned up")
+            UnityLogManager.logDebug(TAG, "Resources cleaned up")
             
         } catch (e: Exception) {
-            Log.e(TAG, "Error during cleanup", e)
+            UnityLogManager.logError(TAG, "Error during cleanup", e)
         }
     }
 
@@ -1016,7 +1017,7 @@ class VideoRecordingManager(
         // MediaProjection is already stopped in cleanupResources()
         // No need to stop it again here
         
-        Log.d(TAG, "VideoRecordingManager released")
+        UnityLogManager.logDebug(TAG, "VideoRecordingManager released")
     }
 
     companion object {

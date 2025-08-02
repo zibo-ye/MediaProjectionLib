@@ -11,6 +11,7 @@ import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
 import android.util.Log
 import kotlin.math.roundToInt
+import com.t34400.mediaprojectionlib.logging.UnityLogManager
 
 class MediaProjectionManager (
     context: Context,
@@ -81,8 +82,8 @@ class MediaProjectionManager (
                         return CapturedScreenDataARGB(image)
                     }
                 } catch (e: SecurityException) {
-                    Log.e(TAG, "SecurityException creating VirtualDisplay: ${e.message}")
-                    Log.e(TAG, "MediaProjection token may be expired or reused - cleaning up")
+                    UnityLogManager.logError(TAG, "SecurityException creating VirtualDisplay: ${e.message}")
+                    UnityLogManager.logError(TAG, "MediaProjection token may be expired or reused - cleaning up")
                     
                     // Clean up invalid state
                     virtualDisplay?.release()
@@ -110,13 +111,13 @@ class MediaProjectionManager (
         imageReader = null
         isPermissionGranted = false
 
-        Log.d(TAG, "stopMediaProjection")
+        UnityLogManager.logDebug(TAG, "stopMediaProjection")
     }
 
     fun restartMediaProjection(context: Context) {
         stopMediaProjection(context)
         MediaProjectionRequestActivity.requestMediaProjection(context, this::registerMediaProjection)
-        Log.d(TAG, "restartMediaProjection - requesting fresh token")
+        UnityLogManager.logDebug(TAG, "restartMediaProjection - requesting fresh token")
     }
 
     private fun registerMediaProjection(context: Context, resultData: Intent) {
@@ -125,7 +126,7 @@ class MediaProjectionManager (
         projection = projectionManager.getMediaProjection(RESULT_OK, resultData)
         isPermissionGranted = true
 
-        Log.d(TAG, "registerMediaProjection - permission granted")
+        UnityLogManager.logDebug(TAG, "registerMediaProjection - permission granted")
     }
 
     companion object {

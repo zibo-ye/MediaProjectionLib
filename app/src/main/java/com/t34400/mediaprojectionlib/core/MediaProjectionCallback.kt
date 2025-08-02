@@ -2,6 +2,7 @@ package com.t34400.mediaprojectionlib.core
 
 import android.media.projection.MediaProjection
 import android.util.Log
+import com.t34400.mediaprojectionlib.logging.UnityLogManager
 
 class MediaProjectionCallback : MediaProjection.Callback() {
     @Suppress("MemberVisibilityCanBePrivate")
@@ -11,14 +12,14 @@ class MediaProjectionCallback : MediaProjection.Callback() {
     override fun onCapturedContentResize(width: Int, height: Int) {
         isRunning = true
 
-        Log.d(TAG, "onCapturedContentResize(width=$width, height=$height)")
+        UnityLogManager.logDebug(TAG, "onCapturedContentResize(width=$width, height=$height)")
     }
 
     override fun onStop() {
         isRunning = false
         isValid = false
 
-        Log.d(TAG, "onStop")
+        UnityLogManager.logDebug(TAG, "onStop")
     }
 
     companion object {
