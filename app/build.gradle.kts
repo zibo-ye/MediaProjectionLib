@@ -56,5 +56,4 @@ dependencies {
     androidTestImplementation("io.mockk:mockk-android:1.13.8")
 
     implementation(libs.serialization.json)
-    compileOnly(libs.webrtc)
 }
